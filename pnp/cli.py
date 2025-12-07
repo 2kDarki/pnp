@@ -131,7 +131,7 @@ def parse_args(argv: list[str]) -> argparse.ArgumentParser:
     p.add_argument('--ci', action='store_true')
     p.add_argument('--remote', default=None)
     p.add_argument('--hooks', default=None)
-    p.add_argument('--changelog-file', default="pnp")
+    p.add_argument('--changelog-file', default="pnp.log")
     p.add_argument('--no-transmission',action='store_true')
     p.add_argument('--interactive', '-i',
                    action='store_true')
