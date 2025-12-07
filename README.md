@@ -31,7 +31,7 @@ It's designed for fast iteration, CI integration, and monorepo-aware projects.
 
 Install via PyPI (once published):
 ```bash
- pip install pnp
+ pip install push-n-publish
 ```
 
 ---

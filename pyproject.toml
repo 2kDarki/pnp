@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "push-n-publish"
-version = "0.1.0"
+version = "0.1.1"
 description = "Push-and-publish: CLI tool to push commits, bump tags, and publish releases including GitHub releases."
 readme = "README.md"
 license = {text = "MIT"}
