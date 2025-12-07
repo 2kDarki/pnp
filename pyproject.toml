@@ -3,7 +3,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pnp"
+name = "push-n-publish"
 version = "0.1.0"
 description = "Push-and-publish: CLI tool to push commits, bump tags, and publish releases including GitHub releases."
 readme = "README.md"
