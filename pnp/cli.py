@@ -357,6 +357,7 @@ def main(argv: list[str] | None = None) -> None | NoReturn:
                 e = giterr.normalize_stderr(e,
                     'Failed to push tags:')
                 utils.transmit(e, fg=BAD); sys.exit(1)
+
     # ================= RELEASE TO GITHUB =================
     token = args.gh_token or os.environ.get("GITHUB_TOKEN")
     if args.gh_release:
