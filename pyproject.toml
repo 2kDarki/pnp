@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pnp"
+version = "0.1.0"
+description = "Push-and-publish: CLI tool to push commits, bump tags, and publish releases including GitHub releases."
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{ name = "Caleb M. Sibanda", email = "darkian.dev@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = ["requests>=2.30.0", "tuikit>=0.1.2"]
+
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3 :: only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+  "Topic :: Software Development :: Utilities"
+]
+
+keywords = ["git", "automation", "cli", "release", "devops", "python"]
+
+[project.scripts]
+pnp = "pnp.__main__:main_wrapper"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[project.urls]
+Homepage = "https://github.com/2kDarki/pnp"
+Documentation = "https://github.com/2kDarki/pnp#readme"
+Repository = "https://github.com/2kDarki/pnp"
+Issues = "https://github.com/2kDarki/pnp/issues"
+
+[project.optional-dependencies]
+dev = ["flake8", "pytest", "black", "kitty", "pylint"]
+
+[tool.setuptools.package-data]
+pnp = ["py.typed"]
