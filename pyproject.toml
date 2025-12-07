@@ -22,7 +22,7 @@ classifiers = [
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Operating System :: OS Independent",
-  "Topic :: Software Development :: Utilities"
+  "Topic :: Software Development :: Version Control :: Git"
 ]
 
 keywords = ["git", "automation", "cli", "release", "devops", "python"]
