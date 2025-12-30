@@ -4,7 +4,7 @@ Primary CLI entry point for the `pnp` automation tool.
 
 This module orchestrates the end-to-end workflow for
 preparing and publishing a Python package or monorepo
-component
+component.
 
 It handles:
   - Parsing command-line arguments
@@ -18,10 +18,10 @@ It handles:
 Supports dry-run, interactive, auto-fix, and quiet modes for
 safety and flexibility. All output is routed through a
 utility transmission system for styling and formatting
-consistency
+consistency.
 
 Uses `main_wrapper()` as the safe entry point to invoke the
-CLI
+CLI.
 """
 # ======================= STANDARDS =======================
 from datetime import datetime
@@ -137,7 +137,7 @@ class Orchestrator:
       - Creating GitHub releases and uploading assets
 
     Supports dry-run and quiet modes for safe evaluation and
-    silent execution
+    silent execution.
     """
 
     def __init__(self, argv: list[str] | None = None):
@@ -670,7 +670,7 @@ def main_wrapper() -> NoReturn:
     - Always emits a completion message regardless of outcome
 
     Intended as the CLI entry point for scripts or direct
-    invocation
+    invocation.
     """
     quiet = utils.any_in("-q", "--quiet", eq=sys.argv)
     out   = utils.Output(quiet=quiet)
