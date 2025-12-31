@@ -38,8 +38,8 @@ classifiers = [
 ]
 
 [project.scripts]
-pnp = "pnp.__main__:main_wrapper"
-git-pnp = "pnp.cli:main_wrapper"
+pnp = "pnp.__main__:main"
+git-pnp = "pnp.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

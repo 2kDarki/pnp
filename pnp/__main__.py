@@ -1,3 +1,3 @@
-from .cli import main_wrapper
+from .cli import main
 
-if __name__ == "__main__": main_wrapper()
+if __name__ == "__main__": main()

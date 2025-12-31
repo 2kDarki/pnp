@@ -117,7 +117,7 @@ class Handlers:
         internet_err = ("no address associated with "
                      + "hostname", "could not resolve host",
                        "software caused connection abort",
-                       "failed to connect")
+                       "failed to connect", "connect to")
         invd_obj_err = ("invalid object", "broken pipe",
                         "has null sha1", "object corrupt",
                         "unexpected diff status a")
@@ -508,7 +508,8 @@ class Handlers:
                 self.abort()
 
         # handle choices
-        g = "github.com"
+        g    = "github.com"
+        mock = None
         if choice == "1":
             info = get_repo_info()
             if not info: return -1
@@ -524,6 +525,7 @@ class Handlers:
                 msg = "paste GitHub token (input hidden)"
                 self.prompt(msg)
                 token = getpass.getpass(CURSOR).strip()
+                print()
             except Exception:
                 self.warn("could not read token")
                 return -1
@@ -533,7 +535,8 @@ class Handlers:
             info = get_repo_info()
             if not info: return -1
             user, repo = info
-            url = f"https://{token}@{g}/{user}/{repo}.git"
+            url  = f"https://{token}@{g}/{user}/{repo}.git"
+            mock = f"https://***@{g}/{user}/{repo}.git"
         elif choice == "4":
             self.prompt(f"visit https://{g}/settings/tokens "
                         "to create a token")
@@ -556,8 +559,9 @@ class Handlers:
         else:
             self.abort("aborting as requested")
 
+        mock = mock if mock else url
         try:
-            self.info(f"adding remote {remote!r} -> {url}")
+            self.prompt(f"adding remote {remote!r}↴\n{mock}")
             cp = _run(["git", "remote", "add", remote,
                  url], cwd, check=True)
             if cp.returncode != 0:
@@ -575,7 +579,11 @@ class Handlers:
         try:
             cp2 = _run(["git", "remote", "-v"], cwd)
             self.prompt("updated remotes↴")
-            self.info(cp2.stdout.strip(), prefix=False)
+            r1, r2 = cp2.stdout.strip().splitlines()
+            r1, r2 = r1.split(), r2.split()
+            r1[1] = r2[1] = mock
+            r1, r2 = " ".join(r1), " ".join(r2)
+            self.info(f"{r1}\n{r2}", prefix=False)
         except Exception as e:
             logger.exception("Failed to list remotes: %s", e)
 

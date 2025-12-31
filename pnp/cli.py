@@ -20,7 +20,7 @@ safety and flexibility. All output is routed through a
 utility transmission system for styling and formatting
 consistency.
 
-Uses `main_wrapper()` as the safe entry point to invoke the
+Uses `main` as the safe entry point to invoke the
 CLI.
 """
 # ======================= STANDARDS =======================
@@ -32,20 +32,26 @@ import argparse
 import time
 import sys
 import os
+import re
 
 # ==================== THIRD-PARTIES ======================
 from tuikit.textools import strip_ansi
 
 # ======================== LOCALS =========================
 from ._constants import DRYRUN, PNP, INFO, GOOD, BAD
-from ._constants import CI_MODE, CURSOR
+from ._constants import CI_MODE, CURSOR, DEBUG
 from .help_menu import wrap, help_msg
 from . import utils
 
 
 def run_hook(cmd: str, cwd: str = None, dryrun: bool = False,
             ) -> int | NoReturn:
-    """Run a shell hook command with optional dry-run and quiet modes."""
+    """Run a validated hook command safely with optional dry-run."""
+    # Reject unsafe shell characters
+    if re.search(r'[;|><`()]', cmd):
+        err = f"rejected potentially unsafe hook: {cmd!r}"
+        raise ValueError(err)
+
     # Decide whether to capture output based on CLI flags and
     # exclusions
     exclude = "drace", "pytest"
@@ -53,9 +59,21 @@ def run_hook(cmd: str, cwd: str = None, dryrun: bool = False,
           and not utils.any_in(exclude, eq=cmd)
 
     # Support optional prefix via 'type::command' format
-    info    = cmd.split("::")
-    prefix  = "run"
-    if len(info) == 2: prefix, cmd = info
+    # Parse and validate command
+    parts = cmd.split("::")
+    prefix = "run"
+    if len(parts) == 2: prefix, cmd = parts
+    args = cmd.split()
+
+    # Blacklist disallowed commands
+    disallowed = {
+        "rm", "mv", "dd", "shutdown", "reboot", "mkfs",
+        "kill", "killall", ">:(", "sudo", "tsu", "chown",
+        "chmod", "wget", "curl"
+    }
+    if args[0] in disallowed:
+        err = f"hook command '{args[0]}' not allowed"
+        raise ValueError(err)
 
     # Add [dry-run] status if in dry-run mode and exit early
     # to simulate success
@@ -92,15 +110,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument('path', nargs='?', default='.')
     p.add_argument('--push', '-p', action='store_true')
     p.add_argument('--publish', '-P', action='store_true')
-    p.add_argument('--dry-run', '-d', action='store_true')
     p.add_argument('--force', '-f', action='store_true')
     p.add_argument('--remote', '-r', default=None)
     p.add_argument('--hooks', default=None)
     p.add_argument('--changelog-file', default="changes.log")
     p.add_argument('--no-transmission', action='store_true')
-    p.add_argument('--ci', action='store_true')
     p.add_argument('--auto-fix', '-a', action='store_true')
     p.add_argument('--quiet', '-q', action='store_true')
+    p.add_argument('--dry-run', '-d', action='store_true')
+    p.add_argument('--ci', action='store_true')
     p.add_argument('--interactive', '-i', action='store_true')
 
     # Github arguments
@@ -282,7 +300,7 @@ class Orchestrator:
 
         If a hook fails:
           - In CI mode: the process fails immediately.
-          - Otherwise: user is prompted whether to continue 
+          - Otherwise: user is prompted whether to continue
                        or abort.
 
         Skips execution entirely if no hooks are provided.
@@ -305,9 +323,10 @@ class Orchestrator:
                 if not self.args.dry_run and i < len(hooks
                         ) - 1:
                     if "drace" not in cmd: print()
-            except Exception as e:
+            except (RuntimeError, ValueError) as e:
                 msg = " ".join(e.args[0].split())
-                msg = f"hook failed {msg}"
+                if isinstance(e, RuntimeError):
+                    msg = f"hook failed {msg}"
                 self.out.warn(msg)
                 prompt = "hook failed. Continue? [y/n]"
                 if CI_MODE:
@@ -658,11 +677,12 @@ class Orchestrator:
                         release_info["id"], fpath)
 
 
-def main_wrapper() -> NoReturn:
+def main() -> NoReturn:
     """
     Top-level wrapper for `Orchestrator()`.
 
-    - Catches and processes uncaught exceptions from `main()`
+    - Catches and processes uncaught exceptions from
+      `Orchestrator()`
     - Handles `KeyboardInterrupt`, `EOFError`, and
       `SystemExit` gracefully
     - Displays formatted error messages and ensures
@@ -676,6 +696,7 @@ def main_wrapper() -> NoReturn:
     out   = utils.Output(quiet=quiet)
     try: Orchestrator()
     except BaseException as e:
+        if DEBUG: raise e  # for devs
         if isinstance(e, SystemExit):
             sys.exit(e)  # respect explicit exit calls
         if not isinstance(e, (KeyboardInterrupt, EOFError)):

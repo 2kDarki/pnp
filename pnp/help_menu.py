@@ -23,7 +23,7 @@ ALLOWED_OPTIONS = {
                 "--ci", "--hooks", "--remote", "-r",
                 "--changelog-file", "--no-transmission",
                 "--auto-fix", "-a", "--quiet", "-q",
-                "--force", "-f"],
+                "--force", "-f", "--debug"],
      "github": ["--gh-release", "--gh-repo",
                 "--gh-token", "--gh-draft", 
                 "--gh-prerelease", "--gh-assets"],
@@ -58,6 +58,8 @@ Args:
 
         if base.startswith("-") and base not in \
                                      ALL_ALLOWED:
+            if len(base) > 2 and base.count("-") == 1:
+                continue  # skip combined arg
             if get: return False
             help_msg(found=True, option=arg)
     return True
