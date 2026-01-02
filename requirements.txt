@@ -1,0 +1,2 @@
+requests>=2.32.5
+tuikit>=0.2.5
