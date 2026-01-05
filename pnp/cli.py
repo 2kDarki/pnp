@@ -115,19 +115,19 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
     # Global arguments
     p.add_argument('path', nargs='?', default='.')
-    p.add_argument('--push', '-p', action='store_true')
-    p.add_argument('--publish', '-P', action='store_true')
-    p.add_argument('--force', '-f', action='store_true')
-    p.add_argument('--remote', '-r', default=None)
+    p.add_argument('--batch-commit', '-b', action='store_true')
     p.add_argument('--hooks', default=None)
     p.add_argument('--changelog-file', default="changes.log")
+    p.add_argument('--push', '-p', action='store_true')
+    p.add_argument('--publish', '-P', action='store_true')
+    p.add_argument('--remote', '-r', default=None)
+    p.add_argument('--force', '-f', action='store_true')
     p.add_argument('--no-transmission', action='store_true')
     p.add_argument('--quiet', '-q', action='store_true')
     p.add_argument('--verbose', '-v', action='store_true')
-    p.add_argument('--integrity-commit', action='store_true')
-    p.add_argument('--debug', action='store_true')
+    p.add_argument('--debug', '-d', action='store_true')
     p.add_argument('--auto-fix', '-a', action='store_true')
-    p.add_argument('--dry-run', '-d', action='store_true')
+    p.add_argument('--dry-run', '-n', action='store_true')
     p.add_argument('--ci', action='store_true')
     p.add_argument('--interactive', '-i', action='store_true')
 
@@ -196,7 +196,7 @@ class Orchestrator:
         self.repo       = None
         self.subpkg     = None
         self.gitutils   = None
-        self.resolver     = None
+        self.resolver   = None
         self.latest     = None
         self.commit_msg = None
         self.tag        = None
@@ -275,7 +275,7 @@ class Orchestrator:
             # Setup logging and import runtime-dependent
             # modules
             self.log_dir = utils.get_log_dir(self.repo)
-            self.gitutils, self.resolver = utils.import_deps()
+            modules      = utils.import_deps()
         except RuntimeError:
             if not CI_MODE:
                 prompt = utils.wrap("no repo found. "
@@ -283,19 +283,19 @@ class Orchestrator:
                 if utils.intent(prompt, "y", "return"):
                     self.log_dir = utils.get_log_dir(
                                    self.path)
-                    modules      = utils.import_deps()
-                    self.gitutils, self.resolver = modules
-                    self.gitutils.git_init(self.path)
+                    modules = utils.import_deps()
+                    modules[0].git_init(self.path)
                     self.repo = self.path
                 else:
                     result = utils.StepResult.ABORT
-                    if "--integrity-commit" in sys.argv:
+                    if "--batch-commit" in sys.argv:
                         result = utils.StepResult.DONE
                     return None, result
             else:
                 return "no git repository found", \
                        utils.StepResult.ABORT
 
+        self.gitutils, self.resolver = modules
         self.out.success(f"repo root: {self.repo}")
 
         # monorepo detection: are we in a package folder?
@@ -711,9 +711,9 @@ def main() -> NoReturn:
     exception management for user-friendly execution.
 
     Features:
-    - Supports normal and batch (`--integrity-commit`) modes
+    - Supports normal and batch (`--batch-commit`) modes
     - Automatically applies default tag message and verbosity
-      settings in integrity mode
+      settings in batch mode
     - Discovers one or more repositories based on provided
       path
     - Delegates execution to `Orchestrator` per discovered
@@ -725,14 +725,9 @@ def main() -> NoReturn:
     This function is intended as the main launcher for CLI
     invocation of the tool.
     """
-    batch = "--integrity-commit" in sys.argv
-    if batch:
-        if "--tag-message" not in sys.argv:
-            stamp   = utils.timestamp(mini=True)
-            message = f"repo integrity commit ({stamp})"
-            sys.argv.extend(["--tag-message", message])
-        if not utils.any_in("-v", "--verbose", eq=sys.argv):
-            sys.argv.append("-q")
+    batch   = "--batch-commit" in sys.argv
+    verbose = utils.any_in("-v", "--verbose", eq=sys.argv)
+    if batch and not verbose: sys.argv.append("-q")
 
     args = parse_args(sys.argv[1:])
     out  = utils.Output(quiet=args.quiet)

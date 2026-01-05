@@ -31,7 +31,7 @@ APP     = "[pnp]"
 PNP     = color(f"{APP} ", "magenta")
 I       = 6
 DEBUG   = "--debug" in sys.argv
-AUTOFIX = any_in("-a", "--auto-fix", eq=sys.argv) \
-       or "--integrity-commit" in sys.argv
+AUTOFIX = any_in("-a", "--auto-fix", "--batch-commit",
+          eq=sys.argv)
 CI_MODE = any_in("--ci", "-q", "--quiet", eq=sys.argv) \
        or not any_in("-i", "--interactive", eq=sys.argv)

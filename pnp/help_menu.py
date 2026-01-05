@@ -19,12 +19,12 @@ from . import utils
 I               = 23  # Indented spaces for options
 ALLOWED_OPTIONS = {
      "global": ["--push", "-p", "--publish", "-P",
-                "--interactive", "-i", "--dry-run", "-d",
+                "--interactive", "-i", "--dry-run", "-n",
                 "--ci", "--hooks", "--remote", "-r",
                 "--changelog-file", "--no-transmission",
                 "--auto-fix", "-a", "--quiet", "-q",
-                "--force", "-f", "--debug", "-v",
-                "--verbose", "--integrity-commit"],
+                "--force", "-f", "--debug", "-d", "-v",
+                "--verbose", "--batch-commit", "-b"],
      "github": ["--gh-release", "--gh-repo",
                 "--gh-token", "--gh-draft", 
                 "--gh-prerelease", "--gh-assets"],
@@ -148,24 +148,39 @@ def print_help(section:int = 0) -> None:
         options = f"""{color(" 1. Global", "green")}
     Path (positional)  {desc("path/to/package (default: "
                        +"'.')")}
-    Push               {desc("-p / --push to push "
-                       +"commits")}
-    Publish            {desc("-P / --publish to bump "
-                       +"tags and push")}
-    Remote push        {desc("-r / --remote NAME for "
-                       +"remote name to push to (default: "
-                       +"origin or branch upstream)")}
+    Batch commits      {desc("-b / --batch-commit to commit "
+                       +"all local repos in the current "
+                       +"directory")}
     Pre-push hooks     {desc('--hooks "command1; command2" '
-                       +'to run pre-push hooks. A '
-                       +'command can include type hint, '
-                       +'e.g., "lint::drace lint ." or '
+                       +"to run pre-push hooks. A command "
+                       +"can include type hint, e.g., "
+                       +'"lint::drace lint ." or '
                        +'"test::pytest ."')}
-    Hook output        {desc("--no-transmission to "
-                       +"print output without effects")}
-    Changelog          {desc("--changelog-file path/to/"
-                       +"file for writing generated "
-                       +"changelog to file (default: "
-                       +"changelog)")}
+    Hook output        {desc("--no-transmission to print "
+                       +"output without effects")}
+    Changelog          {desc("--changelog-file FILE for "
+                       +"writing generated changelog to file"
+                       +" (default: changes.log). Writes to "
+                       +"'repo_root/pnplog/changelog_file' "
+                       +"unless FILE is a path, which it "
+                       +"then writes to that path")}
+    Push               {desc("-p / --push to push commits")}
+    Publish            {desc("-P / --publish to bump tags "
+                       +"and push them. Assumes your "
+                       +"workflows' `*.yml` responsible for "
+                       +"publishing triggers when a tag is "
+                       +"pushed")}
+    Remote push        {desc("-r / --remote NAME for remote "
+                       +"name to push to (default: origin or"
+                       +" branch upstream)")}
+    Force push         {desc("-f / --force for pushing "
+                       +"forcefully. Usually, git push will "
+                       +"refuse to update a branch that is "
+                       +"not an ancestor of the commit "
+                       +"being pushed. This flag disables "
+                       +"that check. NB: it can cause the "
+                       +"remote repository to lose commits; "
+                       +"use it with care.")}
     Auto fix           {desc("-a / --auto-fix to "
                        +"automatically fix all errors "
                        +"encountered using the most sure "
@@ -175,20 +190,8 @@ def print_help(section:int = 0) -> None:
                        +"asked for input if in interactive "
                        +"mode, otherwise it will abort "
                        +"workflow")}
-    Repo health        {desc("--integrity-commit to keep "
-                       +"local repo intact especially on "
-                       +"phones where git objects and trees "
-                       +"get corrupted. Running `git pnp "
-                       +"--integrity-commit` daily, even on "
-                       +"unchanged repos, acts as a health "
-                       +"check, and helps prevent silent "
-                       +"corruption by forcing early "
-                       +"detection and maintaining "
-                       +'filesystem-level "freshness". '
-                       +"NB: you can also use it for batch "
-                       +"commits")}
     Verbose mode       {desc("-v / --verbose to show output "
-                       +"when running intergrity commits ")}
+                       +"when running batch commits ")}
     Quiet mode         {desc("-q / --quiet for silent "
                        +"workflows. NB: since this disables "
                        +"all output, this mode is a "
@@ -196,47 +199,42 @@ def print_help(section:int = 0) -> None:
                        +"on first issue unless auto-fix is "
                        +"set, which will exit on input-"
                        +"dependent errors")}
-    Interactive mode   {desc("-i / --interactive to be"
-                       +" prompted when an issue occurs. "
-                       +"Useful for handling mid-workflow"
-                       +" issues. (NB: flag ignored if in"
-                       +" CI mode)")}
-    CI mode            {desc("--ci for non-interactive"
-                       +" workflow")}
-    Dry run mode       {desc("-d / --dry-run to simulate "
+    Interactive mode   {desc("-i / --interactive to be "
+                       +"prompted when an issue occurs. "
+                       +"Useful for handling mid-workflow "
+                       +"issues. NB: flag ignored if in CI "
+                       +"mode")}
+    CI mode            {desc("--ci for non-interactive "
+                       +"workflow")}
+    Dry run mode       {desc("-n / --dry-run to simulate "
                        +"actions")}
-    Debug mode         {desc("--debug to show full traceback"
-                       +" when an error occurs. Strictly "
-                       +"for devs working on pnp or users "
-                       +"who want to report issues")}
+    Debug mode         {desc("-d / --debug to show full "
+                       +"traceback when an error occurs")}
         """ 
     elif section == 1:  # GitHub options
         options = f"""{color(" 2. Github", "green")}
-    Release            {desc("--gh-release to create a"
-                       +" release from tag")}
+    Release            {desc("--gh-release to create a "
+                       +"release from tag")}
     Repo target        {desc("--gh-repo OWNER/REPO for "
                        +"setting repo. Useful when "
                        +"initializing a new repo or when "
                        +"fixing errors that require you "
                        +"to set a connection with a repo "
-                       +"but you don't want to be asked "
-                       +"to provide username and repo "
-                       +"name when required by the error "
-                       +"handler")}
+                       +"and in auto-fix mode")}
     Token source       {desc("--gh-token TOKEN or set "
                        +"GITHUB_TOKEN env variable")}
     Draft              {desc("--gh-draft for draft release")}
     Mark prerelease    {desc("--gh-prerelease to mark "
                        +"release as prerelease")}
-    Attach files       {desc('--gh-assets "file1, file2'
-                       +', ..." for including files such as '
-                       +'.whl files (also supports '
-                       +'wildcards, e.g., *.whl)')}
+    Attach files       {desc('--gh-assets "file1, file2, ...'
+                       +'" for including files such as .whl '
+                       +"files (also supports wildcards, "
+                       +"e.g., *.whl)")}
         """
     else:  # Tagging options
         options = f"""{color(" 3. Tagging", "green")}
     Tag prefix         {desc("--tag-prefix PREFIX to set tag"
-                       +" prefix (default: 'v')")}
+                       +" prefix (default: v)")}
     Tag bump           {desc("--tag-bump major|minor|patch "
                        +"(default: patch)")}
     Tag message        {desc("--tag-message <message> to "
