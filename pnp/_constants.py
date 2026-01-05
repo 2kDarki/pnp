@@ -10,7 +10,7 @@ def expand_args() -> None:
     for argv in sys.argv[1:]:
         if argv.count("-") == 1: short.add(argv)
 
-    args = {"i", "a", "q", "v"}
+    args = {"a", "b", "i", "q", "v"}
 
     for argv in short:
         for arg in args:
@@ -31,7 +31,7 @@ APP     = "[pnp]"
 PNP     = color(f"{APP} ", "magenta")
 I       = 6
 DEBUG   = "--debug" in sys.argv
-AUTOFIX = any_in("-a", "--auto-fix", "--batch-commit",
+AUTOFIX = any_in("-a", "--auto-fix", "-b", "--batch-commit",
           eq=sys.argv)
 CI_MODE = any_in("--ci", "-q", "--quiet", eq=sys.argv) \
        or not any_in("-i", "--interactive", eq=sys.argv)

@@ -288,7 +288,7 @@ class Orchestrator:
                     self.repo = self.path
                 else:
                     result = utils.StepResult.ABORT
-                    if "--batch-commit" in sys.argv:
+                    if self.args.batch_commit:
                         result = utils.StepResult.DONE
                     return None, result
             else:
@@ -725,9 +725,9 @@ def main() -> NoReturn:
     This function is intended as the main launcher for CLI
     invocation of the tool.
     """
-    batch   = "--batch-commit" in sys.argv
-    verbose = utils.any_in("-v", "--verbose", eq=sys.argv)
-    if batch and not verbose: sys.argv.append("-q")
+    batch = utils.any_in("-b", "--batch-commit", eq=sys.argv)
+    noisy = utils.any_in("-v", "--verbose", eq=sys.argv)
+    if batch and not noisy: sys.argv.append("-q")
 
     args = parse_args(sys.argv[1:])
     out  = utils.Output(quiet=args.quiet)
