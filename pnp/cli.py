@@ -425,7 +425,7 @@ class Orchestrator:
         if not self.args.dry_run and self.args.changelog_file:
             os.makedirs(log_file.parent, exist_ok=True)
             with open(log_file, 'a+', encoding='utf-8') as f:
-                f.write(strip_ansi(div + "\n" + self.log_text))
+                f.write(strip_ansi(f"{div}\n{self.log_text}"))
 
         return None
 
@@ -632,7 +632,8 @@ class Orchestrator:
 
         return None, utils.StepResult.OK
 
-    def release(self) -> tuple[str | None, utils.StepResult]:
+    def release(self) -> tuple[tuple[str, bool]
+                       | None, utils.StepResult]:
         """
         Create a GitHub release for the current tag and
         optionally uploads assets.
@@ -650,9 +651,10 @@ class Orchestrator:
         while displaying intended actions.
 
         Returns:
-            tuple[str | None, utils.StepResult]:
-              - Error message and FAIL if required inputs are
-                missing.
+            tuple[tuple[str, bool] | None, utils.StepResult]:
+              - (Error message, False), ABORT if GitHub
+                release raises an error
+              - None, FAIL if required inputs are missing.
               - None, SKIP if GitHub release is not enabled.
               - None, OK if the release (and assets) are
                 successfully created or dry-run simulated.
@@ -660,7 +662,7 @@ class Orchestrator:
         if not self.args.gh_release:
             return None, utils.StepResult.SKIP
 
-        token = self.args.gh_token\
+        token = self.args.gh_token \
              or os.environ.get("GITHUB_TOKEN")
         if not token:
             m = "GitHub token required for release. Set " \
@@ -680,14 +682,11 @@ class Orchestrator:
         if self.args.dry_run:
             self.out.prompt(DRYRUN + "skipping process...")
         else:
-            release_info = gh.create_release(
-                           token=token,
-                           repo=self.args.gh_repo,
-                           tag=self.tag,
-                           name=self.tag,
-                           body=self.log_text,
-                           draft=self.args.gh_draft,
-                           prerelease=self.args.gh_prerelease)
+            release_info = gh.create_release(token,
+                           self.args.gh_repo, self.tag,
+                           self.tag, self.log_text,
+                           self.args.gh_draft,
+                           self.args.gh_prerelease)
 
         if self.args.gh_assets:
             files = [f.strip() for f in self.args.gh_assets
@@ -697,8 +696,13 @@ class Orchestrator:
                 if self.args.dry_run:
                     self.out.prompt(DRYRUN + "skipping process...")
                 else:
-                    gh.upload_asset(token, self.args.gh_repo,
-                        release_info["id"], fpath)
+                    try: gh.upload_asset(token,
+                         self.args.gh_repo,
+                         release_info["id"], fpath)
+                    except RuntimeError as e:
+                        e = self.resolver.normalize_stderr(e)
+                        return (e, False), \
+                               utils.StepResult.ABORT
 
         return None, utils.StepResult.OK
 
@@ -742,11 +746,12 @@ def main() -> NoReturn:
         exit = (KeyboardInterrupt, EOFError, SystemExit)
         if DEBUG: raise e
         if isinstance(e, SystemExit):
-            if isinstance(e.code, int): code = int(e.code)
-            else: code = 1
+            if isinstance(e.code, int): code = e.code
         if not isinstance(e, exit): out.warn(f"ERROR: {e}")
         elif not isinstance(e, exit[2]):
             i = 1 if not isinstance(e, EOFError) else 2
             out.raw("\n" * i + PNP, end="")
             out.raw(utils.color("forced exit", BAD))
-    finally: out.success("done"); out.raw(); sys.exit(code)
+    finally:
+        status = out.success if code == 0 else out.warn
+        status("done"); out.raw(); sys.exit(code)

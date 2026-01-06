@@ -19,6 +19,7 @@ def expand_args() -> None:
 
 
 expand_args()
+GITHUB  = "https://api.github.com"
 DRYRUN  = color("[dry-run] ", "gray")
 CURSOR  = color("  >>> ", "magenta")
 GOOD    = "green"
@@ -30,7 +31,7 @@ HOLD    = 0.01
 APP     = "[pnp]"
 PNP     = color(f"{APP} ", "magenta")
 I       = 6
-DEBUG   = "--debug" in sys.argv
+DEBUG   = any_in("-d", "--debug", eq=sys.argv)
 AUTOFIX = any_in("-a", "--auto-fix", "-b", "--batch-commit",
           eq=sys.argv)
 CI_MODE = any_in("--ci", "-q", "--quiet", eq=sys.argv) \

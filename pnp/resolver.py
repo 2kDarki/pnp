@@ -1,5 +1,5 @@
 """
-Git error handlers for pnp
+Git error handlers for pnp.
 
 Design goals:
   - Match common git stderr patterns and route to a handler
@@ -23,22 +23,20 @@ import re
 
 # ======================== LOCALS =========================
 from .utils import transmit, any_in, color, wrap, Output
+from .utils import StepResult, wrap_text, intent, auto
 from ._constants import I, BAD, INFO, CURSOR, CI_MODE
-from .utils import wrap_text, intent, auto
 from ._constants import AUTOFIX
 
 
 # Configure module logger
-logger = log.getLogger("pnp.giterr")
+logger = log.getLogger("pnp.resolver")
 logger.setLevel(log.DEBUG)
 if not logger.handlers:
     with open(Path().cwd() / "log_dir") as f:
         for path in f: log_dir = Path(path)
 
     os.remove(Path().cwd() / "log_dir")
-
-    try: os.mkdir(log_dir)
-    except FileExistsError: pass
+    os.makedirs(log_dir, exist_ok=True)
 
     pnp_errors   = log_dir / "debug.log"
     file_handler = log.FileHandler(str(pnp_errors))
@@ -88,12 +86,11 @@ class Handlers:
         - stderr: the stderr string as captured from a failed
                   git command
         - cwd: current working directory
-        - Caller should inspect return value:
-             0 -> handled successfully and caller may
-                  continue
-            10 -> recoverable with suggested action
-            -1 -> user aborted
-    Exception -> fatal
+        - Caller should inspect StepResult:
+               OK -> handled successfully and caller may
+                     continue
+            RETRY -> recoverable with suggested action
+             FAIL -> resolution failed
     """
     def __init__(self):
         out          = Output()
@@ -103,11 +100,12 @@ class Handlers:
         self.warn    = out.warn
         self.abort   = out.abort
 
-    def __call__(self, stderr: str, cwd: str) -> int:
-        """Dispatch based on stderr content"""
+    def __call__(self, stderr: str, cwd: str) -> StepResult \
+                                               | NoReturn:
+        """Dispatch based on stderr content."""
         if not stderr:
             logger.debug("Empty stderr passed to handler")
-            return -1
+            return StepResult.FAIL
 
         s = stderr.lower()
 
@@ -138,7 +136,7 @@ class Handlers:
 
         # remote contains work / non-fast-forward (under review)
         #if any_in(remort_r_err, eq=s):
-        #    return self.repo_corruption(cwd)
+        #    return self.repo_corruption(Path(cwd))
 
         # failure to read from remote
         if any_in(missing_rmot, eq=s):
@@ -151,7 +149,7 @@ class Handlers:
         print()
         logger.warning("Unhandled git stderr pattern. "
                        "Showing normalized message.\n")
-        return -1
+        return StepResult.FAIL
 
     def _classify_remote_issue(self, s: str) -> int:
         """Return error type for remote/internet issues"""
@@ -161,7 +159,8 @@ class Handlers:
                 return 2  # Invalid/non-existent remote URL
         return 0
 
-    def dubious_ownership(self, cwd: str) -> int:
+    def dubious_ownership(self, cwd: str) -> StepResult \
+                                           | NoReturn:
         """Handle 'dubious ownership' by asking to add safe.directory to git config"""
         prompt = wrap("git reported dubious ownership "
                  f"for repository at {cwd!r}. Mark this "
@@ -169,24 +168,24 @@ class Handlers:
         if CI_MODE and not AUTOFIX:
             logger.info("CI mode: refusing to change global"
                         " git config")
-            return -1
+            return StepResult.FAIL
 
         if not AUTOFIX and not intent(prompt, "y", "return"):
-            self.warn("user declined to mark as safe "
-                      "directory")
-            sys.exit(1)
+            msg = "user declined to mark as safe directory"
+            self.abort(msg)
 
         cmd = ["git", "config", "--global", "--add",
                "safe.directory", cwd]
         cp = _run(cmd, cwd)
         if cp.returncode == 0:
             self.success("marked directory as safe")
-            return 0
+            return StepResult.OK
         self.warn("failed to mark safe directory; see git "
                   "output for details")
-        return -1
+        return StepResult.FAIL
 
-    def invalid_object(self, stderr: str, cwd: str) -> int:
+    def invalid_object(self, stderr: str, cwd: str
+                      ) -> StepResult | NoReturn:
         """
         Handle invalid object errors
 
@@ -237,7 +236,7 @@ class Handlers:
                     if len(diagnostics) > 400 else "")
                      + "\n", False)
             logger.debug("Full git fsck output:\n%s\n",
-                   diagnostics)
+                diagnostics)
         except Exception as e:
             exc = "git fsck invocation failed: %s\n"
             logger.exception(exc, e)
@@ -245,14 +244,14 @@ class Handlers:
         if CI_MODE and not AUTOFIX:
             self.warn("CI mode: cannot perform interactive "
                    + "repair")
-            return -1
+            return StepResult.FAIL
 
         if not AUTOFIX:
             # Present choices to user
             choices = {
                 "1": "Open a shell for manual fix",
                 "2": "Attempt destructive reset",
-                "3": "Attempt safe reset (requires internet)",
+                "3": "Attempt safe fix (requires internet)",
                 "4": f"Skip {step} and continue",
                 "5": "Abort"
             }
@@ -275,38 +274,39 @@ class Handlers:
                     or shutil.which("sh")
             if not os_shell:
                 self.warn("no shell available")
-                return -1
+                return StepResult.FAIL
             _run([os_shell], cwd, check=False,
                 capture=False, text=True)
-            return 10
+            return StepResult.RETRY
         if opt == "2":
             if "null sha1" in stderr:
                 _run(["rm", ".git/index"], cwd, check=True)
             try:
                 _run(["git", "reset"], cwd, check=True)
                 _run(["git", "add", "."], cwd, check=True)
-                return 10
+                return StepResult.RETRY
             except Exception as e:
                 logger.exception("auto-repair failed: %s", e)
                 self.warn("auto-repair failed — manual "
                           "intervention may be required")
-                return -1
+                return StepResult.FAIL
         if opt == "3":
             # Not implemented. It is supposed to
             # (1) create a backup of the project
             # (2) delete the project
             # (3) clone the project
-            # (4) update the cloned project using backed-up
-            #     files
-            return -1
+            # (4) update the cloned project using the
+            #     backed-up project
+            self.warn("ERROR: method not implemented")
+            return StepResult.FAIL
         if opt == "4":
             self.prompt("skipping commit and continuing")
-            return 0
+            return StepResult.OK
 
         # default: abort
         self.abort("aborting as requested")
 
-    def repo_corruption(self, cwd: str) -> int:
+    def repo_corruption(self, cwd: Path) -> StepResult:
         """
         Handle remote / non-fast-forward conflicts by making
         a safe backup, synchronizing to remote state, and
@@ -319,10 +319,10 @@ class Handlers:
             branch = (cp.stdout or "").strip()
         except Exception:
             self.warn("could not determine current branch")
-            return -1
+            return StepResult.FAIL
         if not branch:
             self.warn("no branch detected")
-            return -1
+            return StepResult.FAIL
 
         backup_dir = _timestamped_backup_name(Path(cwd))
 
@@ -335,16 +335,16 @@ class Handlers:
             _safe_copytree(cwd, backup_dir, ignore=ignore)
         except Exception:
             self.warn("backup failed")
-            return -1
+            return StepResult.FAIL
 
         # Step 2: fetch + reset to remote
         try:
             self.warn("fetching remote and resetting local "
                       "branch to origin/" + branch)
-            _run(["git", "fetch", "origin"], cwd,
+            _run(["git", "fetch", "origin"], str(cwd),
                  check=True)
             _run(["git", "reset", "--hard",
-                "origin/" + branch], cwd, check=True)
+                "origin/" + branch], str(cwd), check=True)
         except Exception:
             self.prompt("could not sync with remote. "
                       + "Attempting to restore backup...")
@@ -362,15 +362,14 @@ class Handlers:
                         shutil.copy2(item, dest)
                 self.success("restored files from backup")
             except Exception:
-                self.warn("restore failed. Manual"
-                        + "intervention required")
-            return -1
+                self.warn("restore failed. Manual "
+                          "intervention required")
+            return StepResult.FAIL
 
-        # Step 3: restore backed-up non-hidden files into
-        #         cwd
+        # Step 3: restore backed-up non-hidden files into cwd
         try:
             self.prompt("restoring local (uncommitted) "
-                      + "changes from backup...")
+                        "changes from backup...")
             for item in backup_dir.iterdir():
                 if item.name.startswith("."): continue
                 dest = cwd / item.name
@@ -380,7 +379,7 @@ class Handlers:
                 else: shutil.copy2(item, dest)
         except Exception:
             self.warn("failed to copy back local files")
-            return -1
+            return StepResult.FAIL
 
         # Step 4: stage restored changes
         try:
@@ -388,7 +387,7 @@ class Handlers:
                 check=True)
         except Exception:
             self.warn("failed to stage restored files")
-            return -1
+            return StepResult.FAIL
 
         # Step 5: prompt commit message
         default = "restored local changes after remote " \
@@ -408,30 +407,22 @@ class Handlers:
             self.success("restored local changes "
                          "committed on top of remote "
                          "state")
-            return 10  # caller should retry original
-                       # operation
+            return StepResult.RETRY
         except Exception as e:
             exc = "commit of restored changes failed: %s"
             logger.exception(exc, e)
             self.warn("committing restored changes failed. "
                       "Manual fix required")
-            return -1
+            return StepResult.FAIL
 
-    def missing_remote(self, stderr: str, cwd: str) -> int:
-        """
-        Handle 'remote not valid' errors during push.
-
-        Args:
-            stderr: stderr text from git (expected to contain
-                    remote name)
-            cwd: current working directory
-        """
+    def missing_remote(self, stderr: str, cwd: str
+                      ) -> StepResult | NoReturn:
+        """Handle 'remote not valid' errors during push."""
         # try to parse remote name
         remote = None
         try:
             low = stderr
-            if "'" in low:
-                remote = low.split("'", 2)[1]
+            if "'" in low: remote = low.split("'", 2)[1]
             else:
                 # fallback heuristics
                 parts = low.split()
@@ -449,14 +440,14 @@ class Handlers:
             self.warn("could not determine missing remote "
                       "name from git output")
             logger.debug("stderr: %s", stderr)
-            return -1
+            return StepResult.FAIL
 
         self.warn(f"Git push failed: remote {remote!r} is "
                   "not configured or invalid")
 
         if CI_MODE and not AUTOFIX:
             self.warn("CI mode: cannot perform interactive repair")
-            return -1
+            return StepResult.FAIL
 
         if not AUTOFIX:
             self.info("Choose how you'd like to fix this:")
@@ -478,17 +469,16 @@ class Handlers:
                 choice = raw or "7"
                 if choice not in options:
                     transmit("invalid choice", fg=BAD)
-                    return -1
+                    return StepResult.FAIL
             except (KeyboardInterrupt, EOFError) as e:
                 if isinstance(e, EOFError): print()
-                transmit("exiting...", fg=BAD)
-                sys.exit(1)
+                self.abort()
         else:
             msg = auto("attempting to add origin via SSH")
             self.prompt(msg)
             choice = "2"
 
-        def get_repo_info() -> tuple[str, str] | None:
+        def get_repo_info() -> tuple[str, str] | NoReturn:
             repo_arg = None
             if any(a.startswith("--gh-repo") for a in
                                             sys.argv):
@@ -518,12 +508,12 @@ class Handlers:
         mock = None
         if choice == "1":
             info = get_repo_info()
-            if not info: return -1
+            if not info: return StepResult.FAIL
             user, repo = info
             url = f"https://{g}/{user}/{repo}.git"
         elif choice == "2":
             info = get_repo_info()
-            if not info: return -1
+            if not info: return StepResult.FAIL
             user, repo = info
             url = f"git@{g}:{user}/{repo}.git"
         elif choice == "3":
@@ -534,19 +524,19 @@ class Handlers:
                 print()
             except Exception:
                 self.warn("could not read token")
-                return -1
+                return StepResult.FAIL
             if not token:
                 self.warn("empty token provided")
-                return -1
+                return StepResult.FAIL
             info = get_repo_info()
-            if not info: return -1
+            if not info: return StepResult.FAIL
             user, repo = info
             url  = f"https://{token}@{g}/{user}/{repo}.git"
             mock = f"https://***@{g}/{user}/{repo}.git"
         elif choice == "4":
             self.prompt(f"visit https://{g}/settings/tokens "
                         "to create a token")
-            return -1
+            return StepResult.FAIL
         elif choice == "5":
             self.prompt("opening subshell. Fix remotes "
                         "manually. Exit to continue")
@@ -555,13 +545,13 @@ class Handlers:
                     or shutil.which("sh")
             if not os_shell:
                 self.warn("no shell available")
-                return -1
+                return StepResult.FAIL
             _run([os_shell], cwd, check=False,
                 capture=False, text=True)
-            return 10
+            return StepResult.RETRY
         elif choice == "6":
             self.prompt("skipping fix and continuing")
-            return 0
+            return StepResult.OK
         else:
             self.abort("aborting as requested")
 
@@ -574,12 +564,12 @@ class Handlers:
                 self.warn("failed to add remote")
                 logger.debug("git remote add stderr: %s",
                     cp.stderr)
-                return -1
+                return StepResult.FAIL
         except Exception as e:
             logger.exception("Failed to add remote: %s", e)
-            e = normalize_stderr(e)
-            self.warn("failed to add remote:", e)
-            return -1
+            exc = normalize_stderr(e)
+            self.warn("failed to add remote:", exc)
+            return StepResult.FAIL
 
         # show remotes for confirmation
         try:
@@ -594,12 +584,11 @@ class Handlers:
             logger.exception("Failed to list remotes: %s", e)
 
         # success — suggest retry original operation
-        return 10
+        return StepResult.RETRY
 
     def internet_con_err(self, stderr: str, _type: int = 1
-                        ) -> int | NoReturn:
-        """Handle network or remote URL issues"""
-
+                        ) -> NoReturn:
+        """Handle network or remote URL issues."""
         if "'" in stderr: host = stderr.split("'")[1]
         else: host = ""
         host = f": {host!r}." if host else "."
@@ -612,10 +601,8 @@ class Handlers:
             suggestion = f"Run {cmd}"
         else: reason = "network/connectivity problem"
 
-        self.warn(f"git failed due to {reason}{host} "
-                  f"{suggestion} and retry")
-
-        sys.exit(1)
+        self.abort(f"git failed due to {reason}{host} "
+                   f"{suggestion} and retry")
 
 
 def normalize_stderr(stderr: Exception | str,

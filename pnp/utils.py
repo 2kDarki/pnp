@@ -108,7 +108,9 @@ def bump_semver_from_tag(tag: str, bump: str,
         if bump == 'minor': return f"{prefix}0.1.0{suffix}"
         if bump == 'major': return f"{prefix}1.0.0{suffix}"
 
-    major, minor, patch = map(int, m.groups())
+    if m is not None:
+        major, minor, patch = map(int, m.groups())
+
     if bump == 'patch': patch += 1
     if bump == 'minor': minor += 1; patch = 0
     if bump == 'major': major += 1; minor = 0; patch = 0
@@ -126,7 +128,9 @@ def lines(cmd: list[str], cwd: str) -> list | list[str]:
 
 
 def get_changes(cwd: str) -> dict[str, list | list[str]]:
-    changes = {"added": [], "updated": [], "removed": []}
+    changes: dict[str, list | list[str]] = {
+        "added": [], "updated": [], "removed": []
+    }
     try:
         cmd = ["git", "diff", "--name-status", "--cached"]
         cp = lines(cmd[:-1], cwd) or lines(cmd, cwd)
@@ -208,7 +212,7 @@ def gen_commit_message(repo_root):
 
 def gen_changelog(path: str, since: str | None,
                   dry_run: str | None,
-                  until: str | None = "HEAD") -> str:
+                  until: str = "HEAD") -> str:
     rng  = f"{since}..{until}" if since else until
     cmd  = ["git", "log", "--pretty=format:%h %s (%an)", rng]
     proc = subprocess.run(cmd, cwd=path, text=True,
@@ -253,7 +257,7 @@ def wrap(text: str) -> str:
     return wrap_text(text, I, inline=True, order=APP)
 
 
-def transmit(*text: tuple[str], fg: str = PROMPT,
+def transmit(*text: str | tuple[str], fg: str = PROMPT,
              quiet: bool = False, prfx: bool = True) -> None:
     if quiet: return
     if prfx: print(PNP, end="")
@@ -310,4 +314,5 @@ class StepResult(Enum):
     DONE  = auto_enum()
     SKIP  = auto_enum()
     FAIL  = auto_enum()
+    RETRY = auto_enum()
     ABORT = auto_enum()
