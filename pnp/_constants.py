@@ -10,7 +10,7 @@ def expand_args() -> None:
     for argv in sys.argv[1:]:
         if argv.count("-") == 1: short.add(argv)
 
-    args = {"a", "b", "i", "q", "v"}
+    args = {"a", "b", "d", "i", "n", "q", "v"}
 
     for argv in short:
         for arg in args:
