@@ -23,6 +23,8 @@ consistency.
 Uses `main` as the safe entry point to invoke the
 CLI.
 """
+from __future__ import annotations
+
 # ======================= STANDARDS =======================
 from datetime import datetime
 from typing import NoReturn
@@ -38,9 +40,10 @@ import re
 from tuikit.textools import strip_ansi
 
 # ======================== LOCALS =========================
-from ._constants import DRYRUN, PNP, INFO, GOOD, BAD
+from ._constants import DRYRUN, PNP, INFO, GOOD, BAD, PLAIN
 from ._constants import CI_MODE, CURSOR, DEBUG
 from .help_menu import wrap, help_msg
+from .tui import tui_runner
 from . import utils
 
 
@@ -49,12 +52,12 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     Run a validated hook command safely with optional dry-run.
 
     NB: This function is not to be misunderstood as being
-        'safe' against malicious hooks — that's strictly none
+        "safe" against malicious hooks — that"s strictly none
         of my business. So the few guards that are present
         are just me guarding against my own absentmindedness.
     """
     # Reject unsafe shell characters
-    if re.search(r'[$&;|><`()]', cmd):
+    if re.search(r"[$&;|><`()]", cmd):
         err = f"rejected potentially unsafe hook: {cmd!r}"
         raise ValueError(err)
 
@@ -64,7 +67,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     capture = "--no-transmission" not in sys.argv \
           and not utils.any_in(exclude, eq=cmd)
 
-    # Support optional prefix via 'type::command' format
+    # Support optional prefix via "type::command" format
     # Parse and validate command
     parts  = cmd.split("::")
     prefix = "run"
@@ -91,7 +94,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     if "pytest" in cmd: print()
 
     # Run the shell command
-    # NB: DON'T REMOVE `shell=True`!!! HOOKS WILL NOT WORK!!!
+    # NB: DON"T REMOVE `shell=True`!!! HOOKS WILL NOT WORK!!!
     proc   = subprocess.run(cmd, cwd=cwd, shell=True,
              check=True, text=True, capture_output=capture)
     code   = proc.returncode
@@ -114,22 +117,23 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=help_msg())
 
     # Global arguments
-    p.add_argument('path', nargs='?', default='.')
-    p.add_argument('--batch-commit', '-b', action='store_true')
-    p.add_argument('--hooks', default=None)
-    p.add_argument('--changelog-file', default="changes.log")
-    p.add_argument('--push', '-p', action='store_true')
-    p.add_argument('--publish', '-P', action='store_true')
-    p.add_argument('--remote', '-r', default=None)
-    p.add_argument('--force', '-f', action='store_true')
-    p.add_argument('--no-transmission', action='store_true')
-    p.add_argument('--quiet', '-q', action='store_true')
-    p.add_argument('--verbose', '-v', action='store_true')
-    p.add_argument('--debug', '-d', action='store_true')
-    p.add_argument('--auto-fix', '-a', action='store_true')
-    p.add_argument('--dry-run', '-n', action='store_true')
-    p.add_argument('--ci', action='store_true')
-    p.add_argument('--interactive', '-i', action='store_true')
+    p.add_argument("path", nargs="?", default=".")
+    p.add_argument("--batch-commit", "-b", action="store_true")
+    p.add_argument("--hooks", default=None)
+    p.add_argument("--changelog-file", default="changes.log")
+    p.add_argument("--push", "-p", action="store_true")
+    p.add_argument("--publish", "-P", action="store_true")
+    p.add_argument("--remote", "-r", default=None)
+    p.add_argument("--force", "-f", action="store_true")
+    p.add_argument("--no-transmission", action="store_true")
+    p.add_argument("--quiet", "-q", action="store_true")
+    p.add_argument("--plain", action="store_true")
+    p.add_argument("--verbose", "-v", action="store_true")
+    p.add_argument("--debug", "-d", action="store_true")
+    p.add_argument("--auto-fix", "-a", action="store_true")
+    p.add_argument("--dry-run", "-n", action="store_true")
+    p.add_argument("--ci", action="store_true")
+    p.add_argument("--interactive", "-i", action="store_true")
 
     # Github arguments
     p.add_argument("--gh-release", action="store_true")
@@ -140,11 +144,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--gh-assets", default=None)
 
     # Tagging arguments
-    p.add_argument('--tag-prefix', default='v')
-    p.add_argument('--tag-message', default=None)
-    p.add_argument('--tag-sign', action='store_true')
-    p.add_argument('--tag-bump', choices=['major', 'minor',
-                   'patch'], default='patch')
+    p.add_argument("--tag-prefix", default="v")
+    p.add_argument("--tag-message", default=None)
+    p.add_argument("--tag-sign", action="store_true")
+    p.add_argument("--tag-bump", choices=["major", "minor",
+                   "patch"], default="patch")
 
     return p.parse_args(argv)
 
@@ -234,23 +238,37 @@ class Orchestrator:
             self.release,
         ]
 
-        for step in steps:
-            msg, result = step()
-            if result is utils.StepResult.DONE: return None
-            if result is utils.StepResult.SKIP: continue
-            if result is utils.StepResult.FAIL: sys.exit(1)
-            if result is utils.StepResult.ABORT:
-                if isinstance(msg, tuple):
-                    self.out.abort(*msg)
-                else: self.out.abort(msg)
+        labels = [
+            "Detect repository",
+            "Run hooks",
+            "Stage and commit changes",
+            "Push to remote",
+            "Publish tag",
+            "Create GitHub release"
+        ]
+
+        use_ui = None if (not CI_MODE or PLAIN) \
+            else sys.stdout.isatty()
+
+        with tui_runner(labels, enabled=use_ui) as ui:
+            if use_ui: utils.bind_console(ui)
+
+            for i, step in enumerate(steps):
+                ui.start(i)
+                msg, result = step(step_idx=i)
+                ui.finish(i, result)
+                if result is utils.StepResult.DONE: return
+                if result is utils.StepResult.SKIP: continue
+                if result is utils.StepResult.FAIL: sys.exit(1)
+                if result is utils.StepResult.ABORT:
+                    if isinstance(msg, tuple): self.out.abort(*msg)
+                    else: self.out.abort(msg)
 
         if self.args.dry_run:
             self.out.success(DRYRUN + "no changes made")
 
-        return None
-
-    def find_repo(self) -> tuple[str
-                         | None, utils.StepResult]:
+    def find_repo(self, step_idx: int | None = None
+                 ) -> tuple[str | None, utils.StepResult]:
         """
         Locate the Git repository root and sets up project
         context.
@@ -296,7 +314,7 @@ class Orchestrator:
                        utils.StepResult.ABORT
 
         self.gitutils, self.resolver = modules
-        self.out.success(f"repo root: {self.repo}")
+        self.out.success(f"repo root: {utils.pathit(self.repo)}", step_idx)
 
         # monorepo detection: are we in a package folder?
         subpkg = utils.detect_subpackage(self.path, self.repo)
@@ -304,13 +322,13 @@ class Orchestrator:
             self.subpkg = subpkg
             msg = "operating on detected package at: " \
                 + f"{utils.pathit(self.subpkg)}\n"
-            self.out.success(msg)
+            self.out.success(msg, step_idx)
         else: self.subpkg = self.repo
 
         return None, utils.StepResult.OK
 
-    def run_hooks(self) -> tuple[str
-                         | None, utils.StepResult]:
+    def run_hooks(self, step_idx: int | None = None
+                 ) -> tuple[str | None, utils.StepResult]:
         """
         Execute pre-push shell hooks defined via CLI
         arguments.
@@ -333,21 +351,17 @@ class Orchestrator:
         if not self.args.hooks:
             return None, utils.StepResult.SKIP
 
-        hooks = [h.strip() for h in self.args.hooks.split(';'
+        hooks = [h.strip() for h in self.args.hooks.split(";"
                 ) if h.strip()]
-        self.out.info('running hooks:\n' + utils
-            .to_list(hooks))
+        self.out.info("running hooks:\n" + utils
+            .to_list(hooks), step_idx=step_idx)
         for i, cmd in enumerate(hooks):
-            try:
-                run_hook(cmd, self.subpkg, self.args.dry_run)
-                if not self.args.dry_run and i < len(hooks
-                        ) - 1:
-                    if "drace" not in cmd: print()
+            try: run_hook(cmd, self.subpkg, self.args.dry_run)
             except (RuntimeError, ValueError) as e:
                 msg = " ".join(e.args[0].split())
                 if isinstance(e, RuntimeError):
                     msg = f"hook failed {msg}"
-                self.out.warn(msg)
+                self.out.warn(msg, step_idx=step_idx)
                 prompt = "hook failed. Continue? [y/n]"
                 if CI_MODE:
                     return None, utils.StepResult.FAIL
@@ -355,7 +369,7 @@ class Orchestrator:
                     msg = "aborting due to hook failure"
                     return msg, utils.StepResult.ABORT
 
-        if self.args.dry_run: print()
+        if self.args.dry_run and PLAIN: print()
 
         return None, utils.StepResult.OK
 
@@ -424,13 +438,14 @@ class Orchestrator:
         self.out.raw(wrap(self.log_text), end="")
         if not self.args.dry_run and self.args.changelog_file:
             os.makedirs(log_file.parent, exist_ok=True)
-            with open(log_file, 'a+', encoding='utf-8') as f:
+            with open(log_file, "a+", encoding="utf-8") as f:
                 f.write(strip_ansi(f"{div}\n{self.log_text}"))
 
         return None
 
-    def stage_and_commit(self) -> tuple[tuple[str, bool]
-                                | None, utils.StepResult]:
+    def stage_and_commit(self, step_idx: int | None = None
+                        ) -> tuple[tuple[str, bool] | None,
+                             utils.StepResult]:
         """
         Stage and commit any uncommitted changes in the
         target directory.
@@ -456,7 +471,7 @@ class Orchestrator:
             log_file      = self.gen_changelog(get=True)
             self.log_text = utils\
                 .retrieve_latest_changelog(log_file)
-            self.out.success('no changes to commit')
+            self.out.success("no changes to commit", step_idx)
             return None, utils.StepResult.SKIP
 
         if not CI_MODE:
@@ -465,10 +480,6 @@ class Orchestrator:
             if utils.intent(prompt, "n", "return"):
                 return None, utils.StepResult.ABORT
         try:
-            if not self.args.dry_run:
-                self.gitutils.stage_all(self.subpkg)
-            else: self.out.prompt(DRYRUN + "skipping...")
-
             msg = self.args.tag_message\
                or utils.gen_commit_message(self.subpkg)
 
@@ -477,27 +488,28 @@ class Orchestrator:
                   + "exclude commit message"
                 self.out.prompt(m)
                 m = input(CURSOR).strip() or "no"
-                self.out.raw()
+                if PLAIN: self.out.raw()
                 msg = msg if m.lower() == "no" else m
 
             self.commit_msg = msg
 
             if not self.args.dry_run:
+                self.gitutils.stage_all(self.subpkg)
                 self.gitutils.commit(self.subpkg, msg)
             else:
-                prompt = DRYRUN + f"would commit {msg!r}"
-                self.out.prompt(prompt)
+                msg = DRYRUN + f"would commit {msg!r}"
+                self.out.info(msg, step_idx=step_idx)
         except Exception as e:
             e = self.resolver.normalize_stderr(e)
-            return (f'{e}\n', False), utils.StepResult.ABORT
+            return (f"{e}\n", False), utils.StepResult.ABORT
 
         # generate changelog between self.latest and HEAD
         self.gen_changelog()
         return None, utils.StepResult.OK
 
-    def push(self) -> tuple[str
-                    | tuple[str, bool]
-                    | None, utils.StepResult]:
+    def push(self, step_idx: int | None = None
+            ) -> tuple[str | tuple[str, bool] | None,
+                 utils.StepResult]:
         """
         Push local commits to a remote Git repository.
 
@@ -524,18 +536,22 @@ class Orchestrator:
 
         try: self.gitutils.fetch_all(self.repo)
         except Exception as e:
-            self.out.warn(self.resolver.normalize_stderr(e), False)
+            self.out.warn(self.resolver.normalize_stderr(e),
+                False, step_idx=step_idx)
             if CI_MODE and not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(DRYRUN + "continuing regardless")
+            self.out.prompt(DRYRUN + "continuing regardless",
+                step_idx=step_idx)
 
         branchless = False
         branch     = self.gitutils.current_branch(self.subpkg)
         if not branch:
-            self.out.warn("no branch detected")
+            self.out.warn("no branch detected",
+                step_idx=step_idx)
             if not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(DRYRUN + "continuing regardless")
+            self.out.prompt(DRYRUN + "continuing regardless",
+                step_idx=step_idx)
             branchless = True
 
         if not branchless:
@@ -543,8 +559,8 @@ class Orchestrator:
                        .upstream_for_branch(self.subpkg,
                        branch)
             if upstream:
-                remote_name = upstream.split('/')[0]
-            else: remote_name = self.args.remote or 'origin'
+                remote_name = upstream.split("/")[0]
+            else: remote_name = self.args.remote or "origin"
         else: upstream = None
 
         # check ahead/behind
@@ -557,7 +573,7 @@ class Orchestrator:
                 if remote_ahead > 0:
                     m = f"remote ({upstream}) ahead by " \
                       + f"{remote_ahead} commit(s)"
-                    self.out.warn(m)
+                    self.out.warn(m, step_idx=step_idx)
                     if self.args.force: force = True
                     elif not CI_MODE:
                         msg   = utils.wrap("force push and "
@@ -578,9 +594,9 @@ class Orchestrator:
 
         return None, utils.StepResult.OK
 
-    def publish(self) -> tuple[str
-                       | tuple[str, bool]
-                       | None, utils.StepResult]:
+    def publish(self, step_idx: int | None = None
+               ) -> tuple[str | tuple[str, bool] | None,
+                    utils.StepResult]:
         """
         Create and push a new Git tag based on the latest
         tag and version bump strategy.
@@ -605,14 +621,14 @@ class Orchestrator:
             return None, utils.StepResult.SKIP
 
         self.tag = utils.bump_semver_from_tag(
-                   self.latest or '', self.args.tag_bump,
+                   self.latest or "", self.args.tag_bump,
                    prefix=self.args.tag_prefix)
-        self.out.success(utils.wrap(f"new tag: {self.tag}"))
+        self.out.success(f"new tag: {self.tag}", step_idx)
 
         if self.args.dry_run:
             msg = DRYRUN + "would create tag " \
                 + utils.color(self.tag, INFO)
-            self.out.prompt(msg)
+            self.out.prompt(msg, step_idx=step_idx)
         else:
             try: self.gitutils.create_tag(self.repo, self.tag,
                  message=self.args.tag_message
@@ -622,18 +638,19 @@ class Orchestrator:
                        utils.StepResult.ABORT
 
             try: self.gitutils.push(self.repo,
-                 remote=self.args.remote or 'origin',
+                 remote=self.args.remote or "origin",
                  branch=None, force=self.args.force,
                  push_tags=True)
             except Exception as e:
                 e = self.resolver.normalize_stderr(e,
-                    'failed to push tags:')
+                    "failed to push tags:")
                 return (e, False), utils.StepResult.ABORT
 
         return None, utils.StepResult.OK
 
-    def release(self) -> tuple[tuple[str, bool]
-                       | None, utils.StepResult]:
+    def release(self, step_idx: int | None = None
+               ) -> tuple[tuple[str, bool] | None,
+                    utils.StepResult]:
         """
         Create a GitHub release for the current tag and
         optionally uploads assets.
@@ -667,20 +684,21 @@ class Orchestrator:
         if not token:
             m = "GitHub token required for release. Set " \
               + "--gh-token or GITHUB_TOKEN env var"
-            self.out.warn(m)
+            self.out.warn(m, step_idx=step_idx)
             if not self.args.dry_run:
                 return None, utils.StepResult.FAIL
         if not self.args.gh_repo:
-            self.out.warn("--gh-repo required for GitHub release")
+            self.out.warn("--gh-repo required for GitHub release", step_idx=step_idx)
             if not self.args.dry_run:
                 return None, utils.StepResult.FAIL
 
         from . import github as gh
 
-        self.out.success(f"creating GitHub release for tag {self.tag}")
+        self.out.success(f"creating GitHub release for tag {self.tag}", step_idx)
 
         if self.args.dry_run:
-            self.out.prompt(DRYRUN + "skipping process...")
+            self.out.prompt(DRYRUN + "skipping process...",
+                step_idx=step_idx)
         else:
             release_info = gh.create_release(token,
                            self.args.gh_repo, self.tag,
@@ -692,9 +710,11 @@ class Orchestrator:
             files = [f.strip() for f in self.args.gh_assets
                     .split(",") if f.strip()]
             for fpath in files:
-                self.out.success(f"uploading asset: {fpath}")
+                self.out.success(f"uploading asset: {fpath}",
+                    step_idx=step_idx)
                 if self.args.dry_run:
-                    self.out.prompt(DRYRUN + "skipping process...")
+                    self.out.prompt(DRYRUN + "skipping process...",
+                        step_idx=step_idx)
                 else:
                     try: gh.upload_asset(token,
                          self.args.gh_repo,

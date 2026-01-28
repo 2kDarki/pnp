@@ -15,9 +15,18 @@ from tuikit.textools import transmit as _transmit, pathit
 from tuikit.timetools import timestamp
 from tuikit.logictools import any_in
 from tuikit.textools import Align
+from rich.console import Console
 
 # ======================== LOCALS ==========================
 from ._constants import *
+
+
+_active_console: Console | None = None
+
+
+def bind_console(console: Console | None) -> None:
+    global _active_console
+    _active_console = console
 
 
 def find_repo(path: str, batch: bool = False,
@@ -258,10 +267,25 @@ def wrap(text: str) -> str:
 
 
 def transmit(*text: str | tuple[str], fg: str = PROMPT,
-             quiet: bool = False, prfx: bool = True) -> None:
+             quiet: bool = False, prfx: bool = True,
+             step_idx: int | None = None) -> None:
     if quiet: return
+
+    msg    = " ".join(map(str, text))
+    prefix = PNP if prfx else ""
+    full   = f"{prefix}{msg}"
+
+    # --- TUI ACTIVE: Rich owns the terminal ---
+    if _active_console is not None:
+        # NO ANSI, NO per-char printing, NO delays
+        _active_console.add_message(step_idx,
+            color(full, fg))
+        return
+
+    # --- Plain terminal path (legacy behavior) ---
     if prfx: print(PNP, end="")
-    _transmit(*text, speed=SPEED, hold=HOLD, hue=fg)
+
+    _transmit(msg, speed=SPEED, hold=HOLD, hue=fg)
 
 
 def intent(prompt, condition, action="exit", space=True):
@@ -286,24 +310,31 @@ def get_log_dir(path: str) -> Path:
 class Output:
     quiet: bool = False
 
-    def success(self, msg: str) -> None:
-        transmit(wrap(msg), fg=GOOD, quiet=self.quiet)
+    def success(self, msg: str, step_idx: int | None = None
+               ) -> None:
+        transmit(wrap(msg), fg=GOOD, quiet=self.quiet,
+            step_idx=step_idx)
 
-    def info(self, msg: str, prefix: bool = True) -> None:
-        transmit(msg, fg=INFO, quiet=self.quiet, prfx=prefix)
+    def info(self, msg: str, prefix: bool = True,
+             step_idx: int | None = None) -> None:
+        msg = wrap(msg) if PLAIN else msg
+        transmit(msg, fg=INFO, quiet=self.quiet, prfx=prefix,
+            step_idx=step_idx)
 
-    def prompt(self, msg: str, fit: bool = True) -> None:
+    def prompt(self, msg: str, fit: bool = True,
+               step_idx: int | None = None) -> None:
         if fit: msg = wrap(msg)
-        transmit(msg, quiet=self.quiet)
+        transmit(msg, quiet=self.quiet, step_idx=step_idx)
 
-    def warn(self, msg: str, fit: bool = True) -> None:
+    def warn(self, msg: str, fit: bool = True,
+             step_idx: int | None = None) -> None:
         if fit: msg = wrap(msg)
-        transmit(msg, fg=BAD)
+        transmit(msg, fg=BAD, step_idx=step_idx)
 
-    def abort(self, msg: str | None = None, fit: bool = True
-             ) -> NoReturn:
+    def abort(self, msg: str | None = None, fit: bool = True,
+              step_idx: int | None = None) -> NoReturn:
         if not msg: msg = "exiting..."
-        self.warn(msg, fit); sys.exit(1)
+        self.warn(msg, fit, step_idx); sys.exit(1)
 
     def raw(self, *args, **kwargs) -> None:
         if not self.quiet: print(*args, **kwargs)
