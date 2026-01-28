@@ -78,8 +78,8 @@ def git_init(path: str) -> None:
 
 
 def current_branch(path: str) -> str | None:
-    rc, out = run_git(["rev-parse", "--abbrev-ref",
-              "HEAD"], cwd=path)
+    rc, out = run_git(["rev-parse", "--abbrev-ref", "HEAD"],
+              cwd=path)
     return out if rc == 0 else None
 
 
