@@ -52,7 +52,8 @@ class TUIRunner:
         utils.bind_console(self.console)
         self._live = Live(self._render(),
                      console=self.console,
-                     refresh_per_second=10, transient=False)
+                     refresh_per_second=10,
+                     transient=False)
         self._live.__enter__()
         return self
 

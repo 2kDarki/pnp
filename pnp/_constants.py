@@ -8,7 +8,8 @@ from tuikit.logictools import any_in
 def expand_args() -> None:
     short = set()
     for argv in sys.argv[1:]:
-        if argv.count("-") == 1: short.add(argv)
+        if argv.startswith("-") and argv.count("-") == 1:
+            short.add(argv)
 
     args = {"a", "b", "d", "i", "n", "q", "v"}
 
