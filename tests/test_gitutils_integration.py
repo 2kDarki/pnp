@@ -2,13 +2,11 @@
 from __future__ import annotations
 
 from argparse import Namespace
-from pathlib import Path
-import subprocess
-import tempfile
 import unittest
 
 from pnp import _constants as const
 from pnp import gitutils
+from tests._gitfixture import GitFixture
 
 
 def _reset_flags() -> None:
@@ -47,43 +45,12 @@ def _reset_flags() -> None:
 class GitUtilsIntegrationTests(unittest.TestCase):
     def test_push_and_tag_to_local_bare_remote(self) -> None:
         _reset_flags()
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            remote = root / "remote.git"
-            work = root / "work"
-            work.mkdir()
-
-            subprocess.run(
-                ["git", "init", "--bare", str(remote)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["git", "init", str(work)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(work), "config", "user.name", "pnp-test"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(work), "config", "user.email", "pnp@example.com"],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            subprocess.run(
-                ["git", "-C", str(work), "remote", "add", "origin", str(remote)],
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-
+        fix = GitFixture()
+        try:
+            remote = fix.init_bare()
+            work = fix.init_repo("work")
+            fix.set_identity(work, "pnp-test", "pnp@example.com")
+            fix.add_remote(work, "origin", remote)
             (work / "README.md").write_text("hello\n", encoding="utf-8")
             gitutils.stage_all(str(work))
             gitutils.commit(str(work), "initial commit")
@@ -92,23 +59,21 @@ class GitUtilsIntegrationTests(unittest.TestCase):
             self.assertIsNotNone(branch)
 
             gitutils.push(str(work), remote="origin", branch=branch, push_tags=False)
-            cp_branch = subprocess.run(
-                ["git", "--git-dir", str(remote), "show-ref", f"refs/heads/{branch}"],
+            cp_branch = fix.run(
+                ["--git-dir", str(remote), "show-ref", f"refs/heads/{branch}"],
                 check=False,
-                capture_output=True,
-                text=True,
             )
             self.assertEqual(cp_branch.returncode, 0, cp_branch.stderr)
 
             gitutils.create_tag(str(work), "v0.0.1", message="release")
             gitutils.push(str(work), remote="origin", branch=None, push_tags=True)
-            cp_tag = subprocess.run(
-                ["git", "--git-dir", str(remote), "show-ref", "refs/tags/v0.0.1"],
+            cp_tag = fix.run(
+                ["--git-dir", str(remote), "show-ref", "refs/tags/v0.0.1"],
                 check=False,
-                capture_output=True,
-                text=True,
             )
             self.assertEqual(cp_tag.returncode, 0, cp_tag.stderr)
+        finally:
+            fix.close()
 
 
 if __name__ == "__main__":

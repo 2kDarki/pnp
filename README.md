@@ -1,5 +1,8 @@
 # pnp — Push and Publish
 
+[![CI](https://github.com/2kDarki/pnp/actions/workflows/ci.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/ci.yml)
+[![Publish to PyPI](https://github.com/2kDarki/pnp/actions/workflows/publish.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/publish.yml)
+
 **pnp** is a lightweight Python CLI tool to automate the common developer workflow of:
 
 1. Staging and committing changes  
@@ -24,6 +27,18 @@ It's designed for fast iteration, CI integration, and monorepo-aware projects.
 - Monorepo support: operate on sub-packages  
 - GitHub releases: create releases from tags with optional asset uploads  
 - Dry-run mode for safe testing  
+- Optional git-machete checks/sync before push/publish  
+
+---
+
+## Support Matrix
+
+| Area | Supported |
+|---|---|
+| Python | 3.10, 3.11, 3.12 |
+| OS | Linux, macOS, Windows |
+| Git | 2.30+ |
+| Shells | POSIX sh, Bash/Zsh/Fish, PowerShell/CMD |
 
 ---
 
@@ -72,10 +87,85 @@ git pnp . --push --publish --hooks "pytest -q; flake8"
 git pnp . --push --publish --dry-run
 ```
 
+### Check-only preflight (no mutation)
+
+```bash
+git pnp . --check-only --push --publish
+git pnp . --check-only --strict --push --publish
+git pnp . --check-only --check-json
+```
+
+`--check-only` exit codes:
+- `0`: clean
+- `10`: warnings only
+- `20`: blockers found
+
+### Git-machete integration
+
+```bash
+git pnp . --push --publish --status
+git pnp . --push --publish --sync
+```
+
 ### Environment doctor
 
 ```bash
 pnp --doctor
+```
+
+Machine-readable doctor output:
+```bash
+pnp --doctor --doctor-json
+pnp --doctor --doctor-report pnplog/doctor.json
+```
+
+### Show effective config
+
+```bash
+pnp --show-config
+```
+
+### Install git extension shim
+
+```bash
+pnp --install-git-ext
+```
+
+Optional custom install directory:
+```bash
+pnp --install-git-ext --git-ext-dir ~/bin
+```
+
+PATH setup examples:
+
+- Bash/Zsh (Linux/macOS):
+  ```bash
+  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+  # or ~/.zshrc
+  ```
+
+- Fish (Linux/macOS):
+  ```fish
+  fish_add_path $HOME/.local/bin
+  ```
+
+- PowerShell (Windows):
+  ```powershell
+  [Environment]::SetEnvironmentVariable(
+    "Path",
+    "$HOME\.local\bin;" + $env:Path,
+    "User"
+  )
+  ```
+
+- CMD (Windows):
+  ```bat
+  setx PATH "%USERPROFILE%\.local\bin;%PATH%"
+  ```
+
+After updating PATH, start a new shell and verify:
+```bash
+git pnp --version
 ```
 
 ---
@@ -95,6 +185,35 @@ path (positional): Path to the project/package (default .)
 - `--version`: Show installed `pnp` version
 
 - `--doctor`: Run local preflight checks
+
+- `--doctor-json`: Emit doctor results as JSON
+
+- `--doctor-report`: Write doctor JSON report to a file
+
+- `--check-only`: Run non-mutating workflow preflight and exit
+
+- `--check-json`: Emit machine-readable JSON for `--check-only`
+
+- `--strict`: Treat warnings as blockers (recommended with `--check-only` in CI)
+
+JSON schema contracts:
+- `docs/JSON_CONTRACTS.md`
+- Resolver taxonomy and codes: `docs/ERROR_CODES.md`
+- CI gate script: `tools/schema_gate.py`
+
+- `--show-config`: Print effective merged runtime configuration
+
+- `--install-git-ext`: Install `git-pnp` shim (enables `git pnp`)
+
+- `--uninstall-git-ext`: Remove installed `git-pnp` shim
+
+- `--git-ext-dir`: Directory for extension shim install/remove
+
+- `--status`: Run `git machete status` before workflow mutating steps
+
+- `--sync`: Run `git machete status` and `git machete traverse --fetch --sync`
+
+- `--traverse`: Run `git machete status` and `git machete traverse`
 
 - `--force`: Force push remote if needed
 
@@ -126,6 +245,35 @@ path (positional): Path to the project/package (default .)
 
 - `--gh-assets`: Comma-separated list of files to attach to release
 
+## Configuration precedence
+
+Runtime options can be set from:
+1. Defaults in CLI
+2. Project config (`[tool.pnp]` in nearest `pyproject.toml`)
+3. Git config (`pnp.<key>`), global then local repo
+4. Environment variables (`PNP_<KEY>`)
+5. Explicit CLI flags (highest priority)
+
+Examples:
+```bash
+# pyproject.toml
+[tool.pnp]
+push = true
+publish = true
+tag-bump = "minor"
+machete-status = true
+
+# git/env overrides
+git config --global pnp.push true
+git config --global pnp.publish true
+git config --global pnp.tag-bump minor
+git config --global pnp.machete-status true
+git config --global pnp.check-only true
+git config --global pnp.check-json true
+git config --global pnp.strict true
+export PNP_REMOTE=origin
+```
+
 ---
 
 ## Contribution
@@ -138,11 +286,13 @@ path (positional): Path to the project/package (default .)
    ```
 4. Run checks locally:
    ```bash
-   python -m compileall -q pnp tests
-   python -m mypy
-   python -m unittest discover -s tests -v
+   make check
    ```
 5. Submit a pull request
+
+Release process references:
+- `CHANGELOG.md`
+- `docs/release-notes-template.md`
 
 ## CI Workflows
 
@@ -151,6 +301,18 @@ path (positional): Path to the project/package (default .)
   - Ubuntu, macOS, and Windows
   - Syntax check + mypy + unittest suite + package metadata check
 - `Publish to PyPI` workflow runs on `v*` tags and is gated by the test suite.
+
+---
+
+## Compatibility Policy
+
+- Runtime support targets Python `3.10+`.
+- CI validates Python `3.10`, `3.11`, `3.12` on Linux/macOS/Windows.
+- Git `2.30+` is required for expected workflow behavior.
+- `git pnp` extension shims target:
+  - POSIX shells via `git-pnp`
+  - Windows shells via `git-pnp.cmd` (and POSIX shim for Git Bash)
+- Interactive TUI output assumes a TTY; CI/non-interactive paths remain plain and deterministic.
 
 ---
 

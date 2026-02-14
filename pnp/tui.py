@@ -36,17 +36,19 @@ class TUIRunner:
         self.labels    = labels
         self.statuses  = [StepStatus.PENDING] * len(labels)
         self.console   = Console(stderr=True)
-        self._messages: list[list[str]] = [[] for _ in labels]
+        self._messages: list[list[tuple[str, str, bool]]] = \
+            [[] for _ in labels]
         self._spinners: list[Spinner | None] = [None] * len(labels)
         self._live: Live | None = None
 
     # Safe add_message
-    def add_message(self, idx: int | None, msg: str) -> None:
+    def add_message(self, idx: int | None, msg: str,
+                    fg: str = "yellow", prfx: bool = True) -> None:
         if not self.enabled or idx is None:
             # fallback: print directly if step index unknown
             print(msg)
             return
-        self._messages[idx].append(msg)
+        self._messages[idx].append((msg, fg, prfx))
         self._refresh()
 
     def __enter__(self) -> "TUIRunner":
@@ -98,8 +100,13 @@ class TUIRunner:
             step_render = self._row(label, status)
     
             if self._messages[i]:
-                raw_msgs   = "\n".join(self._messages[i])
-                msgs_text  = Text.from_ansi(raw_msgs)
+                msgs_text = Text()
+                for j, (msg, fg, prfx) in enumerate(self._messages[i]):
+                    if j:
+                        msgs_text.append("\n")
+                    if prfx:
+                        msgs_text.append(f"{utils.const.APP} ", style="magenta")
+                    msgs_text.append(msg, style=fg)
                 msgs_panel = Panel(msgs_text, box=MINIMAL,
                              padding=(0, 2))
                 renderable: RenderableType = Group(step_render, msgs_panel)

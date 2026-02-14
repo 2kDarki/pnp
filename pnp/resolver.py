@@ -12,6 +12,7 @@ Design goals:
 # ======================= STANDARDS =======================
 from subprocess import CompletedProcess, run
 from typing import Callable, Iterable
+from dataclasses import dataclass, asdict
 from pathlib import Path
 import logging as log
 import getpass
@@ -30,6 +31,21 @@ from . import _constants as const
 # Configure module logger
 logger = log.getLogger("pnp.resolver")
 logger.setLevel(log.DEBUG)
+
+SEV_INFO = "info"
+SEV_WARN = "warn"
+SEV_ERROR = "error"
+SEV_CRITICAL = "critical"
+
+
+@dataclass(frozen=True)
+class ErrorClassification:
+    code: str
+    severity: str
+    handler: str
+
+    def as_dict(self) -> dict[str, str]:
+        return asdict(self)
 
 
 def configure_logger(log_dir: Path) -> None:
@@ -101,50 +117,88 @@ class Handlers:
         self.info    = out.info
         self.warn    = out.warn
         self.abort   = out.abort
+        self.last_error: dict[str, str] | None = None
+
+    def classify(self, stderr: str) -> ErrorClassification:
+        """Classify git stderr into stable code/severity/handler."""
+        if not stderr:
+            return ErrorClassification(
+                code="PNP_RES_EMPTY_STDERR",
+                severity=SEV_WARN,
+                handler="fallback",
+            )
+        s = stderr.lower()
+        internet_err = (
+            "no address associated with hostname",
+            "could not resolve host",
+            "software caused connection abort",
+            "failed to connect",
+            "connect to",
+        )
+        invd_obj_err = (
+            "invalid object",
+            "broken pipe",
+            "has null sha1",
+            "object corrupt",
+            "unexpected diff status a",
+            "is empty fatal:",
+        )
+        if any_in(internet_err, eq=s):
+            return ErrorClassification(
+                code="PNP_RES_NETWORK_CONNECTIVITY",
+                severity=SEV_ERROR,
+                handler="internet_con_err",
+            )
+        if "dubious ownership" in s:
+            return ErrorClassification(
+                code="PNP_RES_DUBIOUS_OWNERSHIP",
+                severity=SEV_WARN,
+                handler="dubious_ownership",
+            )
+        if any_in(invd_obj_err, eq=s):
+            return ErrorClassification(
+                code="PNP_RES_INVALID_OBJECT",
+                severity=SEV_ERROR,
+                handler="invalid_object",
+            )
+        if "could not read from remote" in s:
+            issue = self._classify_remote_issue(s)
+            if issue == 2:
+                return ErrorClassification(
+                    code="PNP_RES_REMOTE_URL_INVALID",
+                    severity=SEV_ERROR,
+                    handler="internet_con_err",
+                )
+            return ErrorClassification(
+                code="PNP_RES_REMOTE_UNREADABLE",
+                severity=SEV_ERROR,
+                handler="missing_remote",
+            )
+        return ErrorClassification(
+            code="PNP_RES_UNCLASSIFIED",
+            severity=SEV_WARN,
+            handler="fallback",
+        )
 
     def __call__(self, stderr: str, cwd: str) -> StepResult:
         """Dispatch based on stderr content."""
-        if not stderr:
-            logger.debug("Empty stderr passed to handler")
-            return StepResult.FAIL
-
+        cls = self.classify(stderr)
+        self.last_error = cls.as_dict()
         s = stderr.lower()
 
-        internet_err = ("no address associated with "
-                     + "hostname", "could not resolve host",
-                       "software caused connection abort",
-                       "failed to connect", "connect to")
-        invd_obj_err = ("invalid object", "broken pipe",
-                        "has null sha1", "object corrupt",
-                        "unexpected diff status a",
-                        "is empty fatal:")
-        #remort_r_err = ("remote contains work",
-        #                "non-fast-forward",
-        #                "failed to push some refs")
-        missing_rmot = "could not read from remote"
-
-        # internet failure
-        if any_in(internet_err, eq=s):
-            self.internet_con_err(stderr)
-
-        # dubious ownership
-        if "dubious ownership" in s:
-            return self.dubious_ownership(cwd)
-
-        # invalid object / corruption
-        if any_in(invd_obj_err, eq=s):
-            return self.invalid_object(s, cwd)
-
-        # remote contains work / non-fast-forward (under review)
-        #if any_in(remort_r_err, eq=s):
-        #    return self.repo_corruption(Path(cwd))
-
-        # failure to read from remote
-        if any_in(missing_rmot, eq=s):
-            error_type = self._classify_remote_issue(s)
-            if not error_type:
-                return self.missing_remote(s, cwd)
+        if cls.handler == "internet_con_err":
+            error_type = 2 if cls.code == "PNP_RES_REMOTE_URL_INVALID" else 1
             self.internet_con_err(stderr, error_type)
+            return StepResult.FAIL
+        if cls.handler == "dubious_ownership":
+            return self.dubious_ownership(cwd)
+        if cls.handler == "invalid_object":
+            return self.invalid_object(s, cwd)
+        if cls.handler == "missing_remote":
+            return self.missing_remote(s, cwd)
+        if cls.code == "PNP_RES_EMPTY_STDERR":
+            logger.debug("Empty stderr passed to handler")
+            return StepResult.FAIL
 
         # fallback: log and bubble up
         print()
@@ -622,6 +676,11 @@ def normalize_stderr(stderr: Exception | str,
         logger.debug("Full stderr:\n%s", text)
         text = text[:max_len].rstrip() + " ...(truncated)"
     return wrap(text)
+
+
+def classify_stderr(stderr: str) -> dict[str, str]:
+    """Return stable machine-readable classification metadata."""
+    return resolve.classify(stderr).as_dict()
 
 
 # module-level reusable instance for importers

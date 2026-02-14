@@ -35,10 +35,20 @@ def _args(**overrides) -> Namespace:
         "gh_draft": False,
         "gh_prerelease": False,
         "gh_assets": None,
+        "check_only": False,
+        "check_json": False,
+        "strict": False,
         "tag_prefix": "v",
         "tag_message": None,
         "tag_sign": False,
         "tag_bump": "patch",
+        "show_config": False,
+        "install_git_ext": False,
+        "uninstall_git_ext": False,
+        "git_ext_dir": None,
+        "machete_status": False,
+        "machete_sync": False,
+        "machete_traverse": False,
     }
     base.update(overrides)
     return Namespace(**base)

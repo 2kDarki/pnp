@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 import unittest
 import sys
+from unittest.mock import patch
+import json
 
 from pnp import _constants as const
 from pnp import utils
@@ -41,10 +43,20 @@ def make_args(**overrides) -> Namespace:
         "gh_draft": False,
         "gh_prerelease": False,
         "gh_assets": None,
+        "check_only": False,
+        "check_json": False,
+        "strict": False,
         "tag_prefix": "v",
         "tag_message": None,
         "tag_sign": False,
         "tag_bump": "patch",
+        "show_config": False,
+        "install_git_ext": False,
+        "uninstall_git_ext": False,
+        "git_ext_dir": None,
+        "machete_status": False,
+        "machete_sync": False,
+        "machete_traverse": False,
     }
     base.update(overrides)
     return Namespace(**base)
@@ -117,6 +129,120 @@ class Phase1RegressionTests(unittest.TestCase):
         self.assertFalse(const.CI_MODE)
         const.sync_runtime_flags(make_args(interactive=True, quiet=True))
         self.assertTrue(const.CI_MODE)
+
+    def test_run_machete_skips_when_not_enabled(self) -> None:
+        o = Orchestrator(make_args(), repo_path=".")
+        o.repo = "."
+        with redirect_stdout(StringIO()):
+            _, result = o.run_machete()
+        self.assertIs(result, utils.StepResult.SKIP)
+
+    def test_run_machete_fails_when_binary_missing(self) -> None:
+        o = Orchestrator(make_args(machete_status=True), repo_path=".")
+        o.repo = "."
+        with patch("pnp.cli.shutil.which", return_value=None):
+            with redirect_stdout(StringIO()):
+                msg, result = o.run_machete()
+        self.assertIs(result, utils.StepResult.ABORT)
+        self.assertIn("git-machete not found", str(msg))
+
+    def test_run_machete_status_executes(self) -> None:
+        o = Orchestrator(make_args(machete_status=True), repo_path=".")
+        o.repo = "."
+        cp = subprocess.CompletedProcess(
+            args=["git", "machete", "status"],
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+        with patch("pnp.cli.shutil.which", return_value="/usr/bin/git-machete"):
+            with patch("pnp.cli.subprocess.run", return_value=cp) as run:
+                with redirect_stdout(StringIO()):
+                    _, result = o.run_machete()
+        self.assertIs(result, utils.StepResult.OK)
+        run.assert_called()
+
+    def test_check_only_strict_escalates_doctor_warnings(self) -> None:
+        from pnp.cli import run_check_only
+
+        def fake_doctor(path: str, out: utils.Output, json_mode: bool = False,
+                        report_file: str | None = None) -> int:
+            if report_file:
+                payload = {
+                    "summary": {"critical": 0, "warnings": 2, "healthy": False},
+                    "checks": [],
+                }
+                Path(report_file).write_text(json.dumps(payload), encoding="utf-8")
+            return 0
+
+        args = make_args(check_only=True, strict=True, push=False, publish=False)
+        with patch("pnp.cli.run_doctor", side_effect=fake_doctor):
+            with patch("pnp.cli._find_repo_noninteractive", return_value="."):
+                with redirect_stdout(StringIO()):
+                    code = run_check_only(args, utils.Output(quiet=False))
+        self.assertEqual(code, 20)
+
+    def test_check_only_warnings_only_returns_warning_exit_code(self) -> None:
+        from pnp.cli import run_check_only
+
+        def fake_doctor(path: str, out: utils.Output, json_mode: bool = False,
+                        report_file: str | None = None) -> int:
+            if report_file:
+                payload = {
+                    "summary": {"critical": 0, "warnings": 2, "healthy": False},
+                    "checks": [],
+                }
+                Path(report_file).write_text(json.dumps(payload), encoding="utf-8")
+            return 0
+
+        args = make_args(check_only=True, strict=False, push=False, publish=False)
+        with patch("pnp.cli.run_doctor", side_effect=fake_doctor):
+            with patch("pnp.cli._find_repo_noninteractive", return_value="."):
+                with redirect_stdout(StringIO()):
+                    code = run_check_only(args, utils.Output(quiet=False))
+        self.assertEqual(code, 10)
+
+    def test_run_hooks_ci_fails_fast_on_first_error(self) -> None:
+        o = Orchestrator(make_args(hooks="a; b", ci=True, interactive=False), repo_path=".")
+        o.subpkg = "."
+        with patch("pnp.cli.run_hook", side_effect=RuntimeError("[1]: boom")) as hook:
+            with redirect_stdout(StringIO()):
+                _, result = o.run_hooks()
+        self.assertIs(result, utils.StepResult.FAIL)
+        self.assertEqual(hook.call_count, 1)
+
+    def test_run_hooks_interactive_continue_resumes_next_hook(self) -> None:
+        o = Orchestrator(make_args(hooks="a; b", ci=False, interactive=True), repo_path=".")
+        o.subpkg = "."
+
+        calls = {"n": 0}
+
+        def fake_run_hook(cmd: str, cwd: str, dryrun: bool,
+                          no_transmission: bool = False) -> int:
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("[1]: first failed")
+            return 0
+
+        with patch("pnp.cli.run_hook", side_effect=fake_run_hook) as hook:
+            with patch("pnp.cli.utils.intent", return_value=False) as intent:
+                with redirect_stdout(StringIO()):
+                    _, result = o.run_hooks()
+        self.assertIs(result, utils.StepResult.OK)
+        self.assertEqual(hook.call_count, 2)
+        intent.assert_called_once()
+
+    def test_run_hooks_interactive_abort_on_user_choice(self) -> None:
+        o = Orchestrator(make_args(hooks="a; b", ci=False, interactive=True), repo_path=".")
+        o.subpkg = "."
+        with patch("pnp.cli.run_hook", side_effect=RuntimeError("[1]: failed")) as hook:
+            with patch("pnp.cli.utils.intent", return_value=True) as intent:
+                with redirect_stdout(StringIO()):
+                    msg, result = o.run_hooks()
+        self.assertIs(result, utils.StepResult.ABORT)
+        self.assertEqual(msg, "aborting due to hook failure")
+        self.assertEqual(hook.call_count, 1)
+        intent.assert_called_once()
 
 
 if __name__ == "__main__":

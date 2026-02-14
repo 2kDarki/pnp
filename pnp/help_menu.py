@@ -1,4 +1,4 @@
-"""Outputs help message when invalid args are passed"""
+"""Custom help output for pnp."""
 
 # ====================== STANDARDS ========================
 from typing import NoReturn
@@ -10,7 +10,7 @@ from tuikit.textools import style_text as color
 from tuikit import console
 
 # ======================== LOCALS =========================
-from ._constants import BAD, GOOD
+from ._constants import GOOD
 from . import utils
 
 
@@ -23,47 +23,30 @@ ALLOWED_OPTIONS = {
                 "--auto-fix", "-a", "--quiet", "-q",
                 "--force", "-f", "--debug", "-d", "-v",
                 "--verbose", "--batch-commit", "-b",
-                "--plain", "--doctor", "--version"],
+                "--plain", "--doctor", "--version",
+                "--check-only", "--strict",
+                "--check-json",
+                "--show-config", "--doctor-json",
+                "--doctor-report",
+                "--install-git-ext", "--uninstall-git-ext",
+                "--git-ext-dir", "--status", "-s",
+                "--sync", "-S", "--traverse", "-t"],
      "github": ["--gh-release", "--gh-repo",
                 "--gh-token", "--gh-draft",
                 "--gh-prerelease", "--gh-assets"],
     "tagging": ["--tag-bump", "--tag-prefix",
                 "--tag-message", "--tag-sign"]}
 H_FLAGS     = ["-h", "--h", "-help", "--help"]
-ALL_ALLOWED = sum(ALLOWED_OPTIONS.values(), []) + H_FLAGS
 
 
 def get_option(h_arg: str) -> str:
     if isinstance(h_arg, list): h_arg = h_arg[0]
     idx = sys.argv.index(h_arg)
+    if idx == 0: return ""
     arg = sys.argv[idx - 1]
     if "=" in arg: return arg.split("=")[0]
     if arg.startswith("-"): return arg
     return ""
-
-
-def validate_options(get: bool = False) -> bool | NoReturn:
-    """
-    Check if arguments provided are valid.
-
-    Args:
-        get: if True, returns a boolean of argument(s)
-             validity else if an argument is invalid, prints
-             help message and exit, otherwise returns True
-    """
-    raw_args = sys.argv[1:]
-
-    for arg in raw_args:
-        if "=" in arg: base = arg.split("=", 1)[0]
-        else: base = arg
-
-        if base.startswith("-") and base not in \
-                                     ALL_ALLOWED:
-            if len(base) > 2 and base.count("-") == 1:
-                continue  # skip combined arg
-            if get: return False
-            help_msg(found=True, option=arg)
-    return True
 
 
 def help_msg(found: bool = False,
@@ -72,16 +55,15 @@ def help_msg(found: bool = False,
     Conditionally prints help description.
 
     Behavior:
-      - If no help flag present and options are valid ->
-        returns "" (no help)
+      - If no help flag present -> returns parser description
       - If help requested and a known option is present in
         argv -> show only its section
       - Otherwise, print full help and exit
     """
     _help = any(h in sys.argv for h in H_FLAGS)
 
-    if not found and validate_options():
-        if not _help: return ""
+    if not _help:
+        return "pnp git automation CLI"
 
     location = None
     if _help:
@@ -103,14 +85,19 @@ def help_msg(found: bool = False,
          + "release --gh-repo username/repo\n", 8, 4))
     print(wrap('pnp path/to/package --push --publish --'
         'hooks "pytest -q; flake8" --interactive', 8, 4))
+    print(wrap("pnp --doctor", 8, 4))
+    print(wrap("pnp . --check-only --strict --push --publish", 8, 4))
+    print(wrap("pnp . --check-only --check-json", 8, 4))
+    print(wrap("pnp --doctor --doctor-json", 8, 4))
+    print(wrap("pnp --show-config", 8, 4))
+    print(wrap("pnp --install-git-ext", 8, 4))
+    print(wrap("pnp . --push --publish --sync", 8, 4))
 
     # Section 2: Options & Commands
     section = color("Options & Commands:", bold=True,
               underline=True)
     print(f"\n{section}\n")
-    if option:
-        utils.transmit(f"Invalid option: {option!r}\n",
-            fg=BAD)
+    if option: print(f"Invalid option: {option!r}\n")
     if location and h_option: print_help(location - 1)
     else:
         for _ in range(3): print_help(_)
@@ -126,6 +113,14 @@ def help_msg(found: bool = False,
                "control release visibility", 4, 2))
     print(wrap("• Ensure GITHUB_TOKEN is set for GitHub "
                "releases", 4, 2))
+    print(wrap("• Use --doctor to preflight your environment",
+               4, 2))
+    print(wrap("• Use --version to verify installed build",
+               4, 2))
+    print(wrap("• Set defaults via git config (pnp.<key>) "
+               "or env vars (PNP_<KEY>)", 4, 2))
+    print(wrap("• Use git-machete flags to validate/sync branch"
+               " stacks before push/publish", 4, 2))
     print(wrap("• By default, pnp uses fail-fast mode. "
                "The workflow will exit on first failure "
                "unless --interactive is set", 4, 2))
@@ -209,10 +204,38 @@ def print_help(section: int = 0) -> None:
     Debug mode         {desc("-d / --debug to show full "
                        + "traceback when an error occurs")}
     Doctor mode        {desc("--doctor to run local preflight "
-                       + "checks (python, git, repo, remotes, "
-                       + "GitHub token)")}
+                       + "audit checks (runtime, repo hygiene, "
+                       + "metadata, release readiness)")}
+    Doctor JSON        {desc("--doctor-json to print doctor "
+                       + "results in machine-readable JSON")}
+    Doctor report      {desc("--doctor-report FILE to save "
+                       + "doctor JSON report to a file")}
+    Check-only         {desc("--check-only to run non-mutating "
+                       + "workflow preflight and exit")}
+    Strict mode        {desc("--strict to treat warnings as blockers "
+                       + "(useful with --check-only in CI)")}
+    Check JSON         {desc("--check-json to emit machine-readable "
+                       + "JSON summary/findings for --check-only")}
+    Check-only codes   {desc("--check-only returns 0 (clean), "
+                       + "10 (warnings), 20 (blockers)")}
     Version            {desc("--version to print installed "
                        + "pnp version")}
+    Show config        {desc("--show-config to print effective "
+                       + "runtime configuration after applying "
+                       + "defaults, pyproject, git config, env, "
+                       + "and CLI")}
+    Install extension  {desc("--install-git-ext to install "
+                       + "a git-pnp shim for `git pnp`")}
+    Remove extension   {desc("--uninstall-git-ext to remove "
+                       + "the installed git-pnp shim")}
+    Extension dir      {desc("--git-ext-dir PATH to set where "
+                       + "the git-pnp shim is installed")}
+    Machete status     {desc("-s / --status to run `git machete "
+                       + "status` and fail on issues")}
+    Machete sync       {desc("-S / --sync to run `git machete "
+                       + "traverse --fetch --sync`")}
+    Machete traverse   {desc("-t / --traverse to run `git machete "
+                       + "traverse`")}
         """
     elif section == 1:  # GitHub options
         options = f"""{color(" 2. Github", GOOD)}

@@ -1,42 +1,57 @@
-# PNP Production Task List
+# PNP Top-Tier Extension Task List
 
-## Completed
-- [x] Remove import-time runtime side effects (argv mutation, resolver log bootstrap file dependency).
-- [x] Fix batch repo discovery infinite loop.
-- [x] Fix hook failure handling (`RuntimeError` path is now reachable and tested).
-- [x] Add explicit runtime dependency for `rich`.
-- [x] Guard GitHub release flow when no publish step/tag is available.
-- [x] Add PR/push CI workflow with matrix testing.
-- [x] Gate publish workflow on tests.
-- [x] Add package metadata validation (`twine check`).
-- [x] Add `--version` command and stabilize version output.
-- [x] Add `--doctor` preflight command.
-- [x] Add local integration tests for git push + tag push via bare remote.
-- [x] Add local mock-server integration tests for GitHub release + asset upload.
-- [x] Add strict mypy gate and expand strict-typed module set to core runtime files.
-- [x] Remove committed bytecode/cache artifacts.
+## Current State
+- [x] Production baseline reached (CI + tests + typing + publish gate).
+- [x] Rich TUI workflow + doctor audit + machine-readable diagnostics.
+- [x] Layered config (`default < git < env < cli`) with source introspection.
+- [x] `--check-only` gate with CI exit taxonomy (`0`, `10`, `20`).
+- [x] Git extension shim install/uninstall and git-machete integration.
 
-## Current Quality Gates
-- [x] `python -m compileall -q pnp tests`
-- [x] `python -m mypy`
-- [x] `python -m unittest discover -s tests -v`
-- [x] CI matrix: Linux/macOS/Windows + Python 3.10/3.11/3.12
-- [x] Publish workflow requires type-check + tests + packaging checks
+## Remaining Work To Reach Top-Tier
 
-## Next High-Impact Work
-- [ ] Expand strict typing to remaining non-core modules and remove any temporary ignores.
-- [ ] Add dedicated end-to-end CLI scenario tests covering interactive and CI/autofix branches.
-- [ ] Add workflow badges + status section in `README.md`.
-- [ ] Add a changelog/release notes policy (`CHANGELOG.md` + release template).
-- [ ] Add contributor automation targets (e.g. `make check` or `just check`) to standardize local commands.
+### 1) CI Contracts (Highest Impact)
+- [x] Freeze and version JSON schema for:
+  - `--doctor --doctor-json`
+  - `--check-only --check-json`
+- [x] Add schema docs (field definitions, nullable behavior, backward-compat policy).
+- [x] Add regression tests that validate schema keys/order-insensitive structure.
+- [x] Add CI job that fails on schema-breaking changes unless explicitly approved.
 
-## Large-Scale Initiatives (Optional)
-- [ ] Redesign resolver into smaller strategy handlers with explicit error taxonomy.
-- [ ] Introduce hermetic integration test harness for remote behaviors beyond local bare repos.
-- [ ] Add telemetry-free diagnostics report mode (`--doctor --json`) for CI systems.
+### 2) End-to-End Scenario Reliability
+- [x] Add integration scenarios covering:
+  - branch behind upstream (force/no-force outcomes)
+  - publish failure rollback (tag deletion verified)
+  - hook failure + resume paths (interactive and CI)
+  - machete enabled/disabled paths
+- [x] Add non-happy-path sequence tests (multi-step failure chains).
+- [x] Add deterministic test fixture for temporary repos + remotes to reduce flakiness.
 
-## Definition of Done (Production Baseline)
-- [ ] All required checks pass locally and in CI for every PR.
-- [ ] No release tag can publish unless type-check, tests, and package checks pass.
-- [ ] Core commands (`--help`, `--version`, `--doctor`, push/publish/release paths) are covered by automated tests.
-- [ ] README contributor flow exactly matches enforced CI behavior.
+### 3) Config Completeness
+- [x] Add project config file support (`[tool.pnp]` in `pyproject.toml`).
+- [x] Define final precedence including project file:
+  - `defaults < pyproject < git < env < cli`.
+- [x] Add `--show-config` source reporting for new `pyproject` layer.
+- [x] Add conflict/invalid-value diagnostics with actionable messages.
+
+### 4) Extension UX Parity Across Platforms
+- [x] Harden extension shim behavior for Windows/macOS/Linux differences.
+- [x] Add docs for PATH setup + shell profile examples per platform.
+- [x] Add smoke tests for shim command discovery assumptions.
+
+### 5) Operational Governance
+- [x] Add `CHANGELOG.md` policy and release note template.
+- [x] Add workflow badges + support matrix section in `README.md`.
+- [x] Add contributor command entrypoint (`make check` or equivalent).
+- [x] Add compatibility policy (supported Python/Git versions, shell assumptions).
+
+### 6) Resolver/Failure Taxonomy (Advanced)
+- [x] Refactor resolver into explicit handler taxonomy with severity classes.
+- [x] Map resolver outcomes to stable machine-readable error codes.
+- [x] Add tests proving resolver classification consistency.
+
+## Definition Of Top-Tier Done
+- [x] Stable, documented JSON contracts with compatibility policy.
+- [x] Full end-to-end scenario coverage for critical failure/recovery paths.
+- [x] Config system complete across all planned sources with provenance.
+- [x] Cross-platform extension UX documented and validated.
+- [x] Governance docs present (`CHANGELOG`, release template, support policy).

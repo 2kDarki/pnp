@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "git-pnp"
-version = "1.7.0"
+version = "1.8.0"
 description = "A robust Python CLI tool to manage Git workflows with intelligent commit, push, tagging, changelog generation, GitHub releases, hook execution, and error handling."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-dependencies = ["requests>=2.32.5", "tuikit>=0.2.5", "rich>=13.7.0"]
+dependencies = ["requests>=2.32.5", "tuikit>=0.2.5", "rich>=13.7.0", "tomli>=2.0.1; python_version < '3.11'"]
 
 keywords = [
   "git",
@@ -68,6 +68,7 @@ files = [
   "pnp/utils.py",
   "pnp/tui.py",
   "pnp/help_menu.py",
+  "pnp/config.py",
   "pnp/resolver.py",
 ]
 disallow_untyped_defs = true

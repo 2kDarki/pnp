@@ -1,0 +1,47 @@
+{
+  "doctor": {
+    "schema": "pnp.doctor.v1",
+    "schema_version": 1,
+    "required_top_level": [
+      "schema",
+      "schema_version",
+      "generated_at",
+      "path",
+      "summary",
+      "checks"
+    ],
+    "required_summary": [
+      "critical",
+      "warnings",
+      "healthy"
+    ],
+    "required_item": [
+      "name",
+      "status",
+      "details"
+    ]
+  },
+  "check": {
+    "schema": "pnp.check.v1",
+    "schema_version": 1,
+    "required_top_level": [
+      "schema",
+      "schema_version",
+      "generated_at",
+      "path",
+      "strict",
+      "summary",
+      "findings"
+    ],
+    "required_summary": [
+      "exit_code",
+      "blockers",
+      "warnings"
+    ],
+    "required_item": [
+      "level",
+      "check",
+      "message"
+    ]
+  }
+}

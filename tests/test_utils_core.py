@@ -8,6 +8,15 @@ import unittest
 from pnp import utils
 
 
+class _Sink:
+    def __init__(self) -> None:
+        self.calls: list[tuple[int | None, str, str, bool]] = []
+
+    def add_message(self, idx: int | None, msg: str,
+                    fg: str = "yellow", prfx: bool = True) -> None:
+        self.calls.append((idx, msg, fg, prfx))
+
+
 class UtilsCoreTests(unittest.TestCase):
     def test_bump_semver_patch_from_standard_tag(self) -> None:
         self.assertEqual(utils.bump_semver_from_tag("v1.2.3", "patch"), "v1.2.4")
@@ -32,6 +41,22 @@ class UtilsCoreTests(unittest.TestCase):
             last = utils.retrieve_latest_changelog(path)
             self.assertIn("2026-01-02T10:00:00", last)
             self.assertTrue(last.startswith("------| "))
+
+    def test_output_does_not_prewrap_when_tui_sink_is_active(self) -> None:
+        sink = _Sink()
+        utils.bind_console(sink)
+        try:
+            out = utils.Output(quiet=False)
+            msg = ("long-message " * 20).strip()
+            out.success(msg, step_idx=3)
+            self.assertEqual(len(sink.calls), 1)
+            idx, captured, fg, prfx = sink.calls[0]
+            self.assertEqual(idx, 3)
+            self.assertEqual(captured, msg)
+            self.assertEqual(fg, "green")
+            self.assertTrue(prfx)
+        finally:
+            utils.bind_console(None)
 
 
 if __name__ == "__main__":

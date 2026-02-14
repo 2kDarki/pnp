@@ -23,7 +23,8 @@ from . import _constants as const
 
 
 class MessageSink(Protocol):
-    def add_message(self, idx: int | None, msg: str) -> None: ...
+    def add_message(self, idx: int | None, msg: str,
+                    fg: str = PROMPT, prfx: bool = True) -> None: ...
 
 
 _active_console: MessageSink | None = None
@@ -282,14 +283,10 @@ def transmit(*text: str | tuple[str], fg: str = PROMPT,
     if quiet: return
 
     msg    = " ".join(map(str, text))
-    prefix = PNP if prfx else ""
-    full   = f"{prefix}{msg}"
-
     # --- TUI ACTIVE: Rich owns the terminal ---
     if _active_console is not None:
-        # NO ANSI, NO per-char printing, NO delays
-        _active_console.add_message(step_idx,
-            color(full, fg))
+        # Pass raw text + style hints; let Rich render styling.
+        _active_console.add_message(step_idx, msg, fg=fg, prfx=prfx)
         return
 
     # --- Plain terminal path (legacy behavior) ---
@@ -321,7 +318,8 @@ class Output:
 
     def success(self, msg: str, step_idx: int | None = None
                ) -> None:
-        transmit(wrap(msg), fg=GOOD, quiet=self.quiet,
+        msg = msg if _active_console is not None else wrap(msg)
+        transmit(msg, fg=GOOD, quiet=self.quiet,
             step_idx=step_idx)
 
     def info(self, msg: str, prefix: bool = True,
@@ -332,12 +330,14 @@ class Output:
 
     def prompt(self, msg: str, fit: bool = True,
                step_idx: int | None = None) -> None:
-        if fit: msg = wrap(msg)
+        if fit and _active_console is None:
+            msg = wrap(msg)
         transmit(msg, quiet=self.quiet, step_idx=step_idx)
 
     def warn(self, msg: str, fit: bool = True,
              step_idx: int | None = None) -> None:
-        if fit: msg = wrap(msg)
+        if fit and _active_console is None:
+            msg = wrap(msg)
         transmit(msg, fg=BAD, step_idx=step_idx)
 
     def abort(self, msg: str | None = None, fit: bool = True,
