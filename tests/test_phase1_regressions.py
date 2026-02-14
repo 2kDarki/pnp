@@ -74,6 +74,17 @@ class _TaggedDummyGit:
         return ["v1.2.3"]
 
 
+class _CommitDummyGit:
+    def has_uncommitted(self, path: str) -> bool:
+        return True
+
+    def stage_all(self, path: str) -> None:
+        return None
+
+    def commit(self, path: str, msg: str) -> None:
+        return None
+
+
 class Phase1RegressionTests(unittest.TestCase):
     def test_batch_find_repo_returns_and_does_not_hang(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -280,6 +291,30 @@ class Phase1RegressionTests(unittest.TestCase):
         self.assertTrue(Path(o._temp_message_files[0]).exists())
         o._cleanup_temp_message_files()
         self.assertEqual(o._temp_message_files, [])
+
+    def test_edit_message_opens_editor_without_interactive_flag(self) -> None:
+        args = make_args(interactive=False, ci=False, quiet=False, plain=False,
+                         edit_message=True, dry_run=False)
+        const.sync_runtime_flags(args)
+        o = Orchestrator(args, repo_path=".")
+        o.subpkg = "."
+        o.gitutils = _CommitDummyGit()
+        o.resolver = type("R", (), {"normalize_stderr": staticmethod(str)})()
+
+        called = {"n": 0}
+
+        def fake_edit(initial: str, kind: str, step_idx: int | None = None) -> str:
+            called["n"] += 1
+            return "edited message"
+
+        with patch("pnp.cli.utils.gen_commit_message", return_value="seed message"):
+            with patch.object(o, "_git_head", return_value="abc123"):
+                with patch.object(o, "_edit_message_in_editor", side_effect=fake_edit):
+                    with patch.object(o, "gen_changelog", return_value=None):
+                        with redirect_stdout(StringIO()):
+                            _, result = o.stage_and_commit()
+        self.assertIs(result, utils.StepResult.OK)
+        self.assertEqual(called["n"], 1)
 
 
 if __name__ == "__main__":

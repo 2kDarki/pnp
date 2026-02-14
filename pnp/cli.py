@@ -1452,20 +1452,28 @@ class Orchestrator:
             msg = self.args.tag_message\
                or utils.gen_commit_message(self.subpkg)
 
-            if not const.CI_MODE:
-                if bool(getattr(self.args, "edit_message", False)):
-                    msg = self._edit_message_in_editor(
-                        msg,
-                        "commit",
-                        step_idx=step_idx,
-                    )
-                else:
-                    m = "enter commit message. Type 'no' to " \
-                      + "exclude commit message"
-                    self.out.prompt(m)
-                    m = input(const.CURSOR).strip() or "no"
-                    if const.PLAIN: self.out.raw()
-                    msg = msg if m.lower() == "no" else m
+            edit_message = bool(getattr(self.args, "edit_message", False))
+            can_open_editor = not any((
+                bool(getattr(self.args, "ci", False)),
+                bool(getattr(self.args, "quiet", False)),
+                bool(getattr(self.args, "plain", False)),
+            ))
+            if edit_message and can_open_editor:
+                msg = self._edit_message_in_editor(
+                    msg,
+                    "commit",
+                    step_idx=step_idx,
+                )
+            elif not const.CI_MODE:
+                if edit_message and not can_open_editor:
+                    self.out.warn("edit-message skipped in ci/quiet/plain mode",
+                                  step_idx=step_idx)
+                m = "enter commit message. Type 'no' to " \
+                  + "exclude commit message"
+                self.out.prompt(m)
+                m = input(const.CURSOR).strip() or "no"
+                if const.PLAIN: self.out.raw()
+                msg = msg if m.lower() == "no" else m
 
             self.commit_msg = msg
 
