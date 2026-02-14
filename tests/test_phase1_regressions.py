@@ -48,6 +48,8 @@ def make_args(**overrides) -> Namespace:
         "strict": False,
         "tag_prefix": "v",
         "tag_message": None,
+        "edit_message": False,
+        "editor": None,
         "tag_sign": False,
         "tag_bump": "patch",
         "show_config": False,
@@ -243,6 +245,41 @@ class Phase1RegressionTests(unittest.TestCase):
         self.assertEqual(msg, "aborting due to hook failure")
         self.assertEqual(hook.call_count, 1)
         intent.assert_called_once()
+
+    def test_resolve_editor_prefers_git_core_editor(self) -> None:
+        o = Orchestrator(make_args(), repo_path=".")
+        o.repo = "."
+        cp = subprocess.CompletedProcess(
+            args=["git", "-C", ".", "config", "--get", "core.editor"],
+            returncode=0,
+            stdout="nano\n",
+            stderr="",
+        )
+        with patch("pnp.cli.subprocess.run", return_value=cp):
+            with patch("pnp.cli.shutil.which", return_value="/usr/bin/nano"):
+                editor = o._resolve_editor_command()
+        self.assertEqual(editor, ["nano"])
+
+    def test_edit_message_temp_file_is_cleaned(self) -> None:
+        o = Orchestrator(make_args(edit_message=True, editor="fake-editor"), repo_path=".")
+        o.repo = "."
+
+        def fake_run(cmd: list[str], check: bool = False) -> subprocess.CompletedProcess[str]:
+            path = cmd[-1]
+            Path(path).write_text(
+                "custom subject\n\ncustom body\n# comment\n",
+                encoding="utf-8",
+            )
+            return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
+
+        with patch.object(o, "_resolve_editor_command", return_value=["fake-editor"]):
+            with patch("pnp.cli.subprocess.run", side_effect=fake_run):
+                msg = o._edit_message_in_editor("seed message", "commit")
+        self.assertEqual(msg, "custom subject\n\ncustom body")
+        self.assertEqual(len(o._temp_message_files), 1)
+        self.assertTrue(Path(o._temp_message_files[0]).exists())
+        o._cleanup_temp_message_files()
+        self.assertEqual(o._temp_message_files, [])
 
 
 if __name__ == "__main__":

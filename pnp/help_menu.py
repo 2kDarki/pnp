@@ -35,7 +35,8 @@ ALLOWED_OPTIONS = {
                 "--gh-token", "--gh-draft",
                 "--gh-prerelease", "--gh-assets"],
     "tagging": ["--tag-bump", "--tag-prefix",
-                "--tag-message", "--tag-sign"]}
+                "--tag-message", "--edit-message",
+                "--editor", "--tag-sign"]}
 H_FLAGS     = ["-h", "--h", "-help", "--help"]
 
 
@@ -270,6 +271,10 @@ def print_help(section: int = 0) -> None:
                        + "'no' or press enter/return for it "
                        + "to use that message, otherwise it "
                        + "would be overriden")}
+    Edit message       {desc("--edit-message to open your editor "
+                       + "for commit message editing via a temp file")}
+    Editor             {desc("--editor '<cmd>' to set editor command "
+                       + "(default inherits git core.editor / env vars)")}
     Sign tag           {desc("--tag-sign for GPG signing")}
         """
     print(options)

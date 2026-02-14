@@ -25,6 +25,8 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("--show-config", cp.stdout)
         self.assertIn("--check-only", cp.stdout)
         self.assertIn("--check-json", cp.stdout)
+        self.assertIn("--edit-message", cp.stdout)
+        self.assertIn("--editor", cp.stdout)
 
     def test_ci_dry_run_without_repo_exits_non_zero(self) -> None:
         cp = subprocess.run(

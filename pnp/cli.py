@@ -31,6 +31,7 @@ from typing import Any, cast
 from pathlib import Path
 import subprocess
 import argparse
+import shlex
 try:
     import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -181,6 +182,8 @@ def _build_parser() -> argparse.ArgumentParser:
     # Tagging arguments
     p.add_argument("--tag-prefix", default="v")
     p.add_argument("--tag-message", default=None)
+    p.add_argument("--edit-message", action="store_true")
+    p.add_argument("--editor", default=None)
     p.add_argument("--tag-sign", action="store_true")
     p.add_argument("--tag-bump", choices=["major", "minor",
                    "patch"], default="patch")
@@ -291,7 +294,8 @@ def show_effective_config(args: argparse.Namespace,
         "check_json",
         "strict",
         "tag_prefix",
-        "tag_message", "tag_sign", "tag_bump", "doctor",
+        "tag_message", "edit_message", "editor",
+        "tag_sign", "tag_bump", "doctor",
         "doctor_json", "doctor_report", "show_config",
         "install_git_ext", "uninstall_git_ext", "git_ext_dir", "machete_status",
         "machete_sync", "machete_traverse",
@@ -968,6 +972,94 @@ class Orchestrator:
         self.tag: str | None = None
         self.log_dir: Path | None = None
         self.log_text: str | None = None
+        self._temp_message_files: list[str] = []
+
+    def _cleanup_temp_message_files(self) -> None:
+        for path in self._temp_message_files:
+            try:
+                os.unlink(path)
+            except OSError:
+                continue
+        self._temp_message_files.clear()
+
+    def _git_core_editor(self) -> str | None:
+        if not self.repo:
+            return None
+        cp = subprocess.run(
+            ["git", "-C", self.repo, "config", "--get", "core.editor"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if cp.returncode != 0:
+            return None
+        editor = cp.stdout.strip()
+        return editor or None
+
+    def _resolve_editor_command(self) -> list[str]:
+        preferred = getattr(self.args, "editor", None)
+        candidates = [
+            preferred,
+            os.environ.get("PNP_EDITOR"),
+            os.environ.get("GIT_EDITOR"),
+            self._git_core_editor(),
+            os.environ.get("VISUAL"),
+            os.environ.get("EDITOR"),
+        ]
+        if os.name == "nt":
+            candidates.append("notepad")
+        else:
+            candidates.extend(("nano", "vi"))
+
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate:
+                continue
+            value = candidate.strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            try:
+                parts = shlex.split(value, posix=(os.name != "nt"))
+            except ValueError:
+                parts = [value]
+            if not parts:
+                continue
+            binary = parts[0]
+            if os.path.isabs(binary) or shutil.which(binary):
+                return parts
+        raise RuntimeError(
+            "no editor found; set --editor, PNP_EDITOR, GIT_EDITOR, VISUAL, or EDITOR"
+        )
+
+    def _edit_message_in_editor(self, initial: str, kind: str,
+                                step_idx: int | None = None) -> str:
+        editor = self._resolve_editor_command()
+        fd, path = tempfile.mkstemp(prefix="pnp-msg-", suffix=".txt")
+        os.close(fd)
+        self._temp_message_files.append(path)
+        header = [
+            initial.strip(),
+            "",
+            f"# pnp {kind} message editor",
+            "# Lines starting with '#' are ignored.",
+            "# Save and close to continue.",
+        ]
+        Path(path).write_text("\n".join(header) + "\n", encoding="utf-8")
+        self.out.info(f"opening editor: {' '.join(editor)}", step_idx=step_idx)
+        cp = subprocess.run([*editor, path], check=False)
+        if cp.returncode != 0:
+            raise RuntimeError(f"editor exited with status {cp.returncode}")
+        raw = Path(path).read_text(encoding="utf-8")
+        text = "\n".join(
+            line for line in raw.splitlines()
+            if not line.lstrip().startswith("#")
+        ).strip()
+        if not text:
+            self.out.warn("empty editor message; using generated message",
+                          step_idx=step_idx)
+            return initial
+        return text
 
     def _git_head(self, path: str) -> str | None:
         cp = subprocess.run(
@@ -1057,18 +1149,21 @@ class Orchestrator:
             and sys.stdout.isatty())
 
         with tui_runner(labels, enabled=use_ui) as ui:
-            if use_ui: utils.bind_console(ui)
+            try:
+                if use_ui: utils.bind_console(ui)
 
-            for i, step in enumerate(steps):
-                ui.start(i)
-                msg, result = step(step_idx=i)
-                ui.finish(i, result)
-                if result is utils.StepResult.DONE: return None
-                if result is utils.StepResult.SKIP: continue
-                if result is utils.StepResult.FAIL: sys.exit(1)
-                if result is utils.StepResult.ABORT:
-                    if isinstance(msg, tuple): self.out.abort(*msg)
-                    else: self.out.abort(msg)
+                for i, step in enumerate(steps):
+                    ui.start(i)
+                    msg, result = step(step_idx=i)
+                    ui.finish(i, result)
+                    if result is utils.StepResult.DONE: return None
+                    if result is utils.StepResult.SKIP: continue
+                    if result is utils.StepResult.FAIL: sys.exit(1)
+                    if result is utils.StepResult.ABORT:
+                        if isinstance(msg, tuple): self.out.abort(*msg)
+                        else: self.out.abort(msg)
+            finally:
+                self._cleanup_temp_message_files()
 
         if self.args.dry_run:
             self.out.success(const.DRYRUN + "no changes made")
@@ -1358,12 +1453,19 @@ class Orchestrator:
                or utils.gen_commit_message(self.subpkg)
 
             if not const.CI_MODE:
-                m = "enter commit message. Type 'no' to " \
-                  + "exclude commit message"
-                self.out.prompt(m)
-                m = input(const.CURSOR).strip() or "no"
-                if const.PLAIN: self.out.raw()
-                msg = msg if m.lower() == "no" else m
+                if bool(getattr(self.args, "edit_message", False)):
+                    msg = self._edit_message_in_editor(
+                        msg,
+                        "commit",
+                        step_idx=step_idx,
+                    )
+                else:
+                    m = "enter commit message. Type 'no' to " \
+                      + "exclude commit message"
+                    self.out.prompt(m)
+                    m = input(const.CURSOR).strip() or "no"
+                    if const.PLAIN: self.out.raw()
+                    msg = msg if m.lower() == "no" else m
 
             self.commit_msg = msg
 

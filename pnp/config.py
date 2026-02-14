@@ -57,6 +57,8 @@ SPECS: tuple[OptionSpec, ...] = (
     OptionSpec("strict", "strict", "PNP_STRICT", "bool"),
     OptionSpec("tag_prefix", "tag-prefix", "PNP_TAG_PREFIX", "str"),
     OptionSpec("tag_message", "tag-message", "PNP_TAG_MESSAGE", "str"),
+    OptionSpec("edit_message", "edit-message", "PNP_EDIT_MESSAGE", "bool"),
+    OptionSpec("editor", "editor", "PNP_EDITOR", "str"),
     OptionSpec("tag_sign", "tag-sign", "PNP_TAG_SIGN", "bool"),
     OptionSpec("tag_bump", "tag-bump", "PNP_TAG_BUMP", "str",
                choices=("major", "minor", "patch")),

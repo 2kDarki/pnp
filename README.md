@@ -66,6 +66,12 @@ git pnp . --push --publish
 git pnp . --push --publish --interactive
 ```
 
+### Compose commit message in editor
+
+```bash
+git pnp . --push --publish --edit-message
+```
+
 ### GitHub release with assets
 
 ```bash
@@ -226,6 +232,11 @@ JSON schema contracts:
 - `--tag-prefix`: Tag prefix (default v)
 
 - `--tag-message`: Tag message
+
+- `--edit-message`: Open editor to compose commit message via temp file
+  (temp file is auto-deleted after workflow completion)
+
+- `--editor`: Editor command override for `--edit-message` (otherwise inherits Git/editor env)
 
 - `--tag-sign`: Sign the tag with GPG
 
