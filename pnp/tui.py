@@ -67,6 +67,28 @@ class TUIRunner:
         utils.bind_console(None)
         if self._live:
             self._live.__exit__(exc_type, exc, tb)
+            self._live = None
+
+    def suspend(self) -> None:
+        """Temporarily stop live rendering for external TTY apps."""
+        if not self.enabled or not self._live:
+            return
+        utils.bind_console(None)
+        self._live.__exit__(None, None, None)
+        self._live = None
+
+    def resume(self) -> None:
+        """Resume live rendering after external TTY apps exit."""
+        if not self.enabled or self._live is not None:
+            return
+        self._live = Live(
+            self._render(),
+            console=self.console,
+            refresh_per_second=10,
+            transient=False,
+        )
+        self._live.__enter__()
+        utils.bind_console(self)
 
     def start(self, idx: int) -> None:
         if not self.enabled: return

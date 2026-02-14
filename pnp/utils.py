@@ -28,11 +28,41 @@ class MessageSink(Protocol):
 
 
 _active_console: MessageSink | None = None
+_console_stack: list[MessageSink | None] = []
 
 
 def bind_console(console: MessageSink | None) -> None:
     global _active_console
     _active_console = console
+
+
+def suspend_console() -> None:
+    """Pause active sink when external apps need terminal control."""
+    global _active_console
+    current = _active_console
+    _console_stack.append(current)
+    if current is None:
+        return
+    suspend = getattr(current, "suspend", None)
+    if callable(suspend):
+        suspend()
+    else:
+        bind_console(None)
+
+
+def resume_console() -> None:
+    """Restore previously suspended sink."""
+    if not _console_stack:
+        return
+    previous = _console_stack.pop()
+    if previous is None:
+        bind_console(None)
+        return
+    resume = getattr(previous, "resume", None)
+    if callable(resume):
+        resume()
+    else:
+        bind_console(previous)
 
 
 def find_repo(path: str, batch: bool = False,

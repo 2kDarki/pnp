@@ -285,7 +285,11 @@ class Phase1RegressionTests(unittest.TestCase):
 
         with patch.object(o, "_resolve_editor_command", return_value=["fake-editor"]):
             with patch("pnp.cli.subprocess.run", side_effect=fake_run):
-                msg = o._edit_message_in_editor("seed message", "commit")
+                with patch("pnp.cli.utils.suspend_console") as suspend:
+                    with patch("pnp.cli.utils.resume_console") as resume:
+                        msg = o._edit_message_in_editor("seed message", "commit")
+        suspend.assert_called_once()
+        resume.assert_called_once()
         self.assertEqual(msg, "custom subject\n\ncustom body")
         self.assertEqual(len(o._temp_message_files), 1)
         self.assertTrue(Path(o._temp_message_files[0]).exists())

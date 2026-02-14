@@ -1047,7 +1047,11 @@ class Orchestrator:
         ]
         Path(path).write_text("\n".join(header) + "\n", encoding="utf-8")
         self.out.info(f"opening editor: {' '.join(editor)}", step_idx=step_idx)
-        cp = subprocess.run([*editor, path], check=False)
+        utils.suspend_console()
+        try:
+            cp = subprocess.run([*editor, path], check=False)
+        finally:
+            utils.resume_console()
         if cp.returncode != 0:
             raise RuntimeError(f"editor exited with status {cp.returncode}")
         raw = Path(path).read_text(encoding="utf-8")
