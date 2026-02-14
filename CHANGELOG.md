@@ -21,4 +21,8 @@ The format is based on Keep a Changelog and follows semantic versioning.
 ## [Unreleased]
 
 ### Added
-- No unreleased entries yet.
+- Add `--edit-message` to compose commit messages in the user editor via a temporary file.
+- Add `--editor` to override editor command selection (`git core.editor` / env fallback still supported).
+
+### Fixed
+- Fix terminal rendering conflict where Rich live spinners continued updating while external editors (for example `nano`) were open, causing jumbled/flickering editor screens.
