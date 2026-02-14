@@ -27,7 +27,7 @@ from __future__ import annotations
 
 # ======================= STANDARDS =======================
 from datetime import datetime
-from typing import NoReturn
+from typing import Any, cast
 from pathlib import Path
 import subprocess
 import argparse
@@ -35,19 +35,21 @@ import time
 import sys
 import os
 import re
+import shutil
 
 # ==================== THIRD-PARTIES ======================
 from tuikit.textools import strip_ansi
 
 # ======================== LOCALS =========================
-from ._constants import DRYRUN, PNP, INFO, GOOD, BAD, PLAIN
-from ._constants import CI_MODE, CURSOR, DEBUG
+from . import _constants as const
+from . import __version__
 from .help_menu import wrap, help_msg
 from .tui import tui_runner
 from . import utils
 
 
-def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
+def run_hook(cmd: str, cwd: str, dryrun: bool,
+             no_transmission: bool = False) -> int:
     """
     Run a validated hook command safely with optional dry-run.
 
@@ -64,7 +66,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     # Decide whether to capture output based on CLI flags and
     # exclusions
     exclude = "drace", "pytest"
-    capture = "--no-transmission" not in sys.argv \
+    capture = not no_transmission \
           and not utils.any_in(exclude, eq=cmd)
 
     # Support optional prefix via "type::command" format
@@ -73,6 +75,8 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     prefix = "run"
     if len(parts) == 2: prefix, cmd = parts
     args = cmd.split()
+    if not args:
+        raise ValueError("hook command is empty")
 
     # Blacklist disallowed commands
     disallowed = {
@@ -80,15 +84,16 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
         "kill", "killall", ">:(", "sudo", "tsu", "chown",
         "chmod", "wget", "curl"
     }
-    if args[0] in disallowed:
-        err = f"hook command '{args[0]}' not allowed"
+    raw_cmd = os.path.basename(args[0]).lower()
+    if raw_cmd in disallowed:
+        err = f"hook command '{raw_cmd}' not allowed"
         raise ValueError(err)
 
     # Add [dry-run] status if in dry-run mode and exit early
     # to simulate success
-    add = f" {DRYRUN}skips" if dryrun else ""
+    add = f" {const.DRYRUN}skips" if dryrun else ""
     m   = utils.wrap(f"[{prefix}] {cmd}{add}")
-    utils.transmit(m, fg=GOOD)
+    utils.transmit(m, fg=const.GOOD)
     if dryrun: return 0
 
     if "pytest" in cmd: print()
@@ -96,7 +101,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
     # Run the shell command
     # NB: DON"T REMOVE `shell=True`!!! HOOKS WILL NOT WORK!!!
     proc   = subprocess.run(cmd, cwd=cwd, shell=True,
-             check=True, text=True, capture_output=capture)
+             check=False, text=True, capture_output=capture)
     code   = proc.returncode
     stdout = proc.stdout
     stderr = proc.stderr
@@ -115,6 +120,12 @@ def run_hook(cmd: str, cwd: str, dryrun: bool) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Add and parse arguments."""
     p = argparse.ArgumentParser(description=help_msg())
+    p.add_argument(
+        "--version",
+        action="version",
+        version=f"pnp {__version__}",
+    )
+    p.add_argument("--doctor", action="store_true")
 
     # Global arguments
     p.add_argument("path", nargs="?", default=".")
@@ -151,6 +162,87 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
                    "patch"], default="patch")
 
     return p.parse_args(argv)
+
+
+def _find_repo_noninteractive(path: str) -> str | None:
+    """Find a git repo near path without prompting."""
+    cur = os.path.abspath(path)
+    while True:
+        if os.path.isdir(os.path.join(cur, ".git")):
+            return cur
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+
+    base = os.path.abspath(path)
+    if not os.path.isdir(base):
+        return None
+    for child in os.listdir(base):
+        cand = os.path.join(base, child)
+        if os.path.isdir(os.path.join(cand, ".git")):
+            return cand
+    return None
+
+
+def run_doctor(path: str, out: utils.Output) -> int:
+    """Run local environment diagnostics."""
+    failures = 0
+    out.info("doctor report", prefix=False)
+
+    py_ok = sys.version_info >= (3, 10)
+    status = out.success if py_ok else out.warn
+    status(f"python: {sys.version.split()[0]} (>=3.10 required)")
+    if not py_ok:
+        failures += 1
+
+    git_bin = shutil.which("git")
+    if not git_bin:
+        out.warn("git: not found in PATH")
+        failures += 1
+    else:
+        cp = subprocess.run(
+            [git_bin, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if cp.returncode == 0:
+            out.success(f"git: {cp.stdout.strip()}")
+        else:
+            out.warn("git: detected but unusable")
+            failures += 1
+
+    repo = _find_repo_noninteractive(path)
+    if repo:
+        out.success(f"repository: detected at {utils.pathit(repo)}")
+        cp = subprocess.run(
+            ["git", "-C", repo, "remote"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        remotes = [r for r in cp.stdout.splitlines() if r.strip()]
+        if cp.returncode == 0 and remotes:
+            out.success(f"remotes: {', '.join(remotes)}")
+        elif cp.returncode == 0:
+            out.warn("remotes: none configured")
+        else:
+            out.warn("remotes: unable to read")
+    else:
+        out.warn("repository: none detected near target path")
+
+    token = os.environ.get("GITHUB_TOKEN")
+    if token:
+        out.success("github token: set (GITHUB_TOKEN)")
+    else:
+        out.warn("github token: missing (set GITHUB_TOKEN for releases)")
+
+    if failures:
+        out.warn(f"doctor summary: {failures} critical issue(s) found")
+        return 1
+    out.success("doctor summary: environment is healthy")
+    return 0
 
 
 class Orchestrator:
@@ -194,20 +286,21 @@ class Orchestrator:
         if isinstance(argv, list): argv = parse_args(argv)
 
         self.args: argparse.Namespace = argv
+        const.sync_runtime_flags(self.args)
         self.path       = os.path.abspath(repo_path
                        or self.args.path)
         self.out        = utils.Output(quiet=self.args.quiet)
-        self.repo       = None
-        self.subpkg     = None
-        self.gitutils   = None
-        self.resolver   = None
-        self.latest     = None
-        self.commit_msg = None
-        self.tag        = None
-        self.log_dir    = None
-        self.log_text   = None
+        self.repo: str | None = None
+        self.subpkg: str | None = None
+        self.gitutils: Any = None
+        self.resolver: Any = None
+        self.latest: str | None = None
+        self.commit_msg: str | None = None
+        self.tag: str | None = None
+        self.log_dir: Path | None = None
+        self.log_text: str | None = None
 
-    def orchestrate(self) -> None | NoReturn:
+    def orchestrate(self) -> None:
         """
         Execute the full release workflow.
 
@@ -247,8 +340,8 @@ class Orchestrator:
             "Create GitHub release"
         ]
 
-        use_ui = None if (not CI_MODE or PLAIN) \
-            else sys.stdout.isatty()
+        use_ui = bool(const.CI_MODE and not const.PLAIN
+            and sys.stdout.isatty())
 
         with tui_runner(labels, enabled=use_ui) as ui:
             if use_ui: utils.bind_console(ui)
@@ -257,7 +350,7 @@ class Orchestrator:
                 ui.start(i)
                 msg, result = step(step_idx=i)
                 ui.finish(i, result)
-                if result is utils.StepResult.DONE: return
+                if result is utils.StepResult.DONE: return None
                 if result is utils.StepResult.SKIP: continue
                 if result is utils.StepResult.FAIL: sys.exit(1)
                 if result is utils.StepResult.ABORT:
@@ -265,7 +358,7 @@ class Orchestrator:
                     else: self.out.abort(msg)
 
         if self.args.dry_run:
-            self.out.success(DRYRUN + "no changes made")
+            self.out.success(const.DRYRUN + "no changes made")
 
     def find_repo(self, step_idx: int | None = None
                  ) -> tuple[str | None, utils.StepResult]:
@@ -288,20 +381,23 @@ class Orchestrator:
             continue, fail, or abort.
         """
         try:
-            self.repo = utils.find_repo(self.path)
+            found_repo = utils.find_repo(self.path)
+            if not isinstance(found_repo, str):
+                raise RuntimeError("unexpected repository resolution")
+            self.repo = found_repo
 
             # Setup logging and import runtime-dependent
             # modules
             self.log_dir = utils.get_log_dir(self.repo)
-            modules      = utils.import_deps()
+            modules      = utils.import_deps(self.log_dir)
         except RuntimeError:
-            if not CI_MODE:
+            if not const.CI_MODE:
                 prompt = utils.wrap("no repo found. "
                        + "Initialize here? [y/n]")
                 if utils.intent(prompt, "y", "return"):
                     self.log_dir = utils.get_log_dir(
                                    self.path)
-                    modules = utils.import_deps()
+                    modules = utils.import_deps(self.log_dir)
                     modules[0].git_init(self.path)
                     self.repo = self.path
                 else:
@@ -314,6 +410,7 @@ class Orchestrator:
                        utils.StepResult.ABORT
 
         self.gitutils, self.resolver = modules
+        assert self.repo is not None
         self.out.success(f"repo root: {utils.pathit(self.repo)}", step_idx)
 
         # monorepo detection: are we in a package folder?
@@ -324,6 +421,7 @@ class Orchestrator:
                 + f"{utils.pathit(self.subpkg)}\n"
             self.out.success(msg, step_idx)
         else: self.subpkg = self.repo
+        assert self.subpkg is not None
 
         return None, utils.StepResult.OK
 
@@ -353,23 +451,30 @@ class Orchestrator:
 
         hooks = [h.strip() for h in self.args.hooks.split(";"
                 ) if h.strip()]
+        assert self.subpkg is not None
         self.out.info("running hooks:\n" + utils
             .to_list(hooks), step_idx=step_idx)
         for i, cmd in enumerate(hooks):
-            try: run_hook(cmd, self.subpkg, self.args.dry_run)
+            try:
+                run_hook(
+                    cmd,
+                    self.subpkg,
+                    self.args.dry_run,
+                    no_transmission=self.args.no_transmission,
+                )
             except (RuntimeError, ValueError) as e:
                 msg = " ".join(e.args[0].split())
                 if isinstance(e, RuntimeError):
                     msg = f"hook failed {msg}"
                 self.out.warn(msg, step_idx=step_idx)
                 prompt = "hook failed. Continue? [y/n]"
-                if CI_MODE:
+                if const.CI_MODE:
                     return None, utils.StepResult.FAIL
                 if utils.intent(prompt, "n", "return"):
                     msg = "aborting due to hook failure"
                     return msg, utils.StepResult.ABORT
 
-        if self.args.dry_run and PLAIN: print()
+        if self.args.dry_run and const.PLAIN: print()
 
         return None, utils.StepResult.OK
 
@@ -402,26 +507,31 @@ class Orchestrator:
             None | Path: Returns the changelog path if `get`
                          is True; otherwise, returns None.
         """
+        assert self.repo is not None
         tags        = self.gitutils.tags_sorted(self.repo)
         self.latest = tags[0] if tags else None
         timestamp   = datetime.now().isoformat()[:-7]
 
+        assert self.log_dir is not None
+        log_file: Path = self.log_dir / Path("changes.log")
         if self.args.changelog_file:
-            log_file = self.args.changelog_file
-            if os.sep not in log_file:
-                log_file = self.log_dir / Path(log_file)
+            log_name = self.args.changelog_file
+            if os.sep not in log_name:
+                log_file = self.log_dir / Path(log_name)
+            else:
+                log_file = Path(log_name)
 
         if get: return log_file
 
         msg = self.commit_msg if self.args.dry_run else None
-        hue = GOOD
+        hue = const.GOOD
         div = f"------| {timestamp} |------"
         try:
             self.log_text = utils.gen_changelog(
                             self.repo, since=self.latest,
                             dry_run=msg) + "\n"
         except Exception as e:
-            hue = BAD
+            hue = const.BAD
             add = ""
             if self.args.dry_run and "ambiguous" in e.args[0]:
                 add = "NB: Potentially due to dry-run "\
@@ -431,7 +541,7 @@ class Orchestrator:
                             hue)
 
         # log changes
-        self.out.raw(PNP, end="")
+        self.out.raw(const.PNP, end="")
         prompt = utils.color("changelog↴\n", hue)
         self.out.raw(wrap(prompt))
         self.out.raw(utils.Align().center(div, "-"))
@@ -467,14 +577,16 @@ class Orchestrator:
               - None, SKIP if no changes are found
               - None, OK if commit is successful
         """
+        assert self.subpkg is not None
         if not self.gitutils.has_uncommitted(self.subpkg):
             log_file      = self.gen_changelog(get=True)
+            assert isinstance(log_file, Path)
             self.log_text = utils\
                 .retrieve_latest_changelog(log_file)
             self.out.success("no changes to commit", step_idx)
             return None, utils.StepResult.SKIP
 
-        if not CI_MODE:
+        if not const.CI_MODE:
             prompt = utils.wrap("uncommitted changes "
                    + "found. Stage and commit? [y/n]")
             if utils.intent(prompt, "n", "return"):
@@ -483,12 +595,12 @@ class Orchestrator:
             msg = self.args.tag_message\
                or utils.gen_commit_message(self.subpkg)
 
-            if not CI_MODE:
+            if not const.CI_MODE:
                 m = "enter commit message. Type 'no' to " \
                   + "exclude commit message"
                 self.out.prompt(m)
-                m = input(CURSOR).strip() or "no"
-                if PLAIN: self.out.raw()
+                m = input(const.CURSOR).strip() or "no"
+                if const.PLAIN: self.out.raw()
                 msg = msg if m.lower() == "no" else m
 
             self.commit_msg = msg
@@ -497,7 +609,7 @@ class Orchestrator:
                 self.gitutils.stage_all(self.subpkg)
                 self.gitutils.commit(self.subpkg, msg)
             else:
-                msg = DRYRUN + f"would commit {msg!r}"
+                msg = const.DRYRUN + f"would commit {msg!r}"
                 self.out.info(msg, step_idx=step_idx)
         except Exception as e:
             e = self.resolver.normalize_stderr(e)
@@ -533,14 +645,15 @@ class Orchestrator:
         """
         if not self.args.push:
             return None, utils.StepResult.SKIP
+        assert self.subpkg is not None and self.repo is not None
 
         try: self.gitutils.fetch_all(self.repo)
         except Exception as e:
             self.out.warn(self.resolver.normalize_stderr(e),
                 False, step_idx=step_idx)
-            if CI_MODE and not self.args.dry_run:
+            if const.CI_MODE and not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(DRYRUN + "continuing regardless",
+            self.out.prompt(const.DRYRUN + "continuing regardless",
                 step_idx=step_idx)
 
         branchless = False
@@ -550,7 +663,7 @@ class Orchestrator:
                 step_idx=step_idx)
             if not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(DRYRUN + "continuing regardless",
+            self.out.prompt(const.DRYRUN + "continuing regardless",
                 step_idx=step_idx)
             branchless = True
 
@@ -575,11 +688,11 @@ class Orchestrator:
                       + f"{remote_ahead} commit(s)"
                     self.out.warn(m, step_idx=step_idx)
                     if self.args.force: force = True
-                    elif not CI_MODE:
+                    elif not const.CI_MODE:
                         msg   = utils.wrap("force push and "
                               + "overwrite remote? [y/n]")
-                        force = utils.intent(msg, "y",
-                                "return")
+                        force = bool(utils.intent(msg, "y",
+                                "return"))
                     else: return None, utils.StepResult.ABORT
 
         if not branchless:
@@ -589,8 +702,8 @@ class Orchestrator:
                     force=force,
                     push_tags=False)
             except Exception as e:
-                msg = self.resolver.normalize_stderr(e), False
-                return msg, utils.StepResult.ABORT
+                return (self.resolver.normalize_stderr(e), False), \
+                    utils.StepResult.ABORT
 
         return None, utils.StepResult.OK
 
@@ -626,8 +739,8 @@ class Orchestrator:
         self.out.success(f"new tag: {self.tag}", step_idx)
 
         if self.args.dry_run:
-            msg = DRYRUN + "would create tag " \
-                + utils.color(self.tag, INFO)
+            msg = const.DRYRUN + "would create tag " \
+                + utils.color(self.tag, const.INFO)
             self.out.prompt(msg, step_idx=step_idx)
         else:
             try: self.gitutils.create_tag(self.repo, self.tag,
@@ -679,6 +792,23 @@ class Orchestrator:
         if not self.args.gh_release:
             return None, utils.StepResult.SKIP
 
+        if not self.tag:
+            assert self.repo is not None
+            tags = self.gitutils.tags_sorted(self.repo)
+            if tags:
+                self.tag = tags[0]
+                self.out.warn(
+                    "no publish step detected; using latest tag "
+                    + f"{self.tag!r} for release",
+                    step_idx=step_idx,
+                )
+            elif not self.args.dry_run:
+                self.out.warn("cannot create GitHub release: no tag available",
+                    step_idx=step_idx)
+                return None, utils.StepResult.FAIL
+            else:
+                self.tag = "v0.0.0-dry-run"
+
         token = self.args.gh_token \
              or os.environ.get("GITHUB_TOKEN")
         if not token:
@@ -697,9 +827,10 @@ class Orchestrator:
         self.out.success(f"creating GitHub release for tag {self.tag}", step_idx)
 
         if self.args.dry_run:
-            self.out.prompt(DRYRUN + "skipping process...",
+            self.out.prompt(const.DRYRUN + "skipping process...",
                 step_idx=step_idx)
         else:
+            assert token is not None and self.tag is not None
             release_info = gh.create_release(token,
                            self.args.gh_repo, self.tag,
                            self.tag, self.log_text,
@@ -713,12 +844,13 @@ class Orchestrator:
                 self.out.success(f"uploading asset: {fpath}",
                     step_idx=step_idx)
                 if self.args.dry_run:
-                    self.out.prompt(DRYRUN + "skipping process...",
+                    self.out.prompt(const.DRYRUN + "skipping process...",
                         step_idx=step_idx)
                 else:
+                    assert token is not None
                     try: gh.upload_asset(token,
                          self.args.gh_repo,
-                         release_info["id"], fpath)
+                         int(cast(int, release_info["id"])), fpath)
                     except RuntimeError as e:
                         e = self.resolver.normalize_stderr(e)
                         return (e, False), \
@@ -727,7 +859,7 @@ class Orchestrator:
         return None, utils.StepResult.OK
 
 
-def main() -> NoReturn:
+def main() -> None:
     """
     CLI entry point for the `pnp` tool.
 
@@ -749,29 +881,38 @@ def main() -> NoReturn:
     This function is intended as the main launcher for CLI
     invocation of the tool.
     """
-    batch = utils.any_in("-b", "--batch-commit", eq=sys.argv)
-    noisy = utils.any_in("-v", "--verbose", eq=sys.argv)
-    if batch and not noisy: sys.argv.append("-q")
-
     args = parse_args(sys.argv[1:])
+    if args.batch_commit and not args.verbose:
+        args.quiet = True
+    const.sync_runtime_flags(args)
     out  = utils.Output(quiet=args.quiet)
     code = 0
     try:
-        paths = utils.find_repo(args.path, batch, True)
+        if args.doctor:
+            code = run_doctor(args.path, out)
+            return None
+        if args.batch_commit:
+            paths = utils.find_repo(
+                args.path,
+                batch=True,
+                return_none=False,
+            )
+        else:
+            paths = [None]
         for path in paths:
             orchestrator = Orchestrator(args, path)
             orchestrator.orchestrate()
     except BaseException as e:
         code = 1
         exit = (KeyboardInterrupt, EOFError, SystemExit)
-        if DEBUG: raise e
+        if const.DEBUG: raise e
         if isinstance(e, SystemExit):
             if isinstance(e.code, int): code = e.code
         if not isinstance(e, exit): out.warn(f"ERROR: {e}")
         elif not isinstance(e, exit[2]):
             i = 1 if not isinstance(e, EOFError) else 2
-            out.raw("\n" * i + PNP, end="")
-            out.raw(utils.color("forced exit", BAD))
+            out.raw("\n" * i + const.PNP, end="")
+            out.raw(utils.color("forced exit", const.BAD))
     finally:
         status = out.success if code == 0 else out.warn
         status("done"); out.raw(); sys.exit(code)

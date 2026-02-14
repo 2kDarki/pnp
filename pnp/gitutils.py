@@ -7,11 +7,11 @@ should handle prompts and dry-run.
 """
 # ======================= STANDARDS =======================
 import subprocess
-import sys
 
 # ======================== LOCALS =========================
-from .utils import Output, StepResult, transmit, any_in
+from .utils import Output, StepResult, transmit
 from ._constants import DRYRUN, APP, BAD
+from . import _constants as const
 from . import resolver
 
 
@@ -32,7 +32,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
       original proc code/output
     - `tries` stops repeated retries (max 1 retry)
     """
-    if any_in("-n", "--dry-run", eq=sys.argv):
+    if const.DRY_RUN:
         return 1, DRYRUN + "skips process"
     proc = subprocess.run(["git"] + args, cwd=cwd, text=True,
            capture_output=capture)
@@ -40,8 +40,14 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     stderr = proc.stderr or ""
     out    = (stdout or stderr).strip()
 
+    # Successful git commands often emit progress/warnings on
+    # stderr. Treat non-zero return codes as failure signals.
+    if proc.returncode == 0:
+        return 0, out
+
     # nothing to handle
-    if not stderr: return proc.returncode, out
+    if not stderr:
+        return proc.returncode, out
 
     # quick bypass for benign message
     if "no upstream configured" in stderr.lower():
@@ -54,7 +60,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         transmit(exc, fg=BAD)
         return proc.returncode, out
 
-    echo = Output(quiet=any_in("-q", "--quiet", eq=sys.argv))
+    echo = Output(quiet=const.QUIET)
     if result is StepResult.RETRY and tries < 1:
         echo.prompt("retrying step...")
         return run_git(args, cwd=cwd, capture=capture,
@@ -164,13 +170,17 @@ def create_tag(path: str, tag: str,
 def push(path: str, remote: str = "origin",
          branch: str | None = None, force: bool = False,
          push_tags: bool = True) -> None:
-    args = ["push"]
-    if force: args.append("--force")
-    args.append(remote)
-    if branch: args.append(branch)
-    rc, out = run_git(args, cwd=path)
-    if rc != 0:
-        raise RuntimeError("git push failed: " + out)
+    should_push_branch = branch is not None or not push_tags
+    if should_push_branch:
+        args = ["push"]
+        if force:
+            args.append("--force")
+        args.append(remote)
+        if branch:
+            args.append(branch)
+        rc, out = run_git(args, cwd=path)
+        if rc != 0:
+            raise RuntimeError("git push failed: " + out)
     if push_tags:
         rc, out = run_git(["push", remote, "--tags"],
                   cwd=path)

@@ -23,7 +23,7 @@ ALLOWED_OPTIONS = {
                 "--auto-fix", "-a", "--quiet", "-q",
                 "--force", "-f", "--debug", "-d", "-v",
                 "--verbose", "--batch-commit", "-b",
-                "--plain"],
+                "--plain", "--doctor", "--version"],
      "github": ["--gh-release", "--gh-repo",
                 "--gh-token", "--gh-draft",
                 "--gh-prerelease", "--gh-assets"],
@@ -39,6 +39,7 @@ def get_option(h_arg: str) -> str:
     arg = sys.argv[idx - 1]
     if "=" in arg: return arg.split("=")[0]
     if arg.startswith("-"): return arg
+    return ""
 
 
 def validate_options(get: bool = False) -> bool | NoReturn:
@@ -207,6 +208,11 @@ def print_help(section: int = 0) -> None:
                        + "actions")}
     Debug mode         {desc("-d / --debug to show full "
                        + "traceback when an error occurs")}
+    Doctor mode        {desc("--doctor to run local preflight "
+                       + "checks (python, git, repo, remotes, "
+                       + "GitHub token)")}
+    Version            {desc("--version to print installed "
+                       + "pnp version")}
         """
     elif section == 1:  # GitHub options
         options = f"""{color(" 2. Github", GOOD)}

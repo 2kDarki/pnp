@@ -4,12 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "git-pnp"
-version = "1.6.1"
+version = "1.7.0"
 description = "A robust Python CLI tool to manage Git workflows with intelligent commit, push, tagging, changelog generation, GitHub releases, hook execution, and error handling."
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
-dependencies = ["requests>=2.32.5", "tuikit>=0.2.5"]
+dependencies = ["requests>=2.32.5", "tuikit>=0.2.5", "rich>=13.7.0"]
 
 keywords = [
   "git",
@@ -48,7 +48,26 @@ Repository = "https://github.com/2kDarki/pnp"
 Issues = "https://github.com/2kDarki/pnp/issues"
 
 [project.optional-dependencies]
-dev = ["drace"]
+dev = ["drace", "build", "twine", "mypy", "types-requests"]
 
 [tool.setuptools.package-data]
 pnp = ["py.typed"]
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+show_error_codes = true
+pretty = true
+files = [
+  "pnp/__init__.py",
+  "pnp/__main__.py",
+  "pnp/_constants.py",
+  "pnp/cli.py",
+  "pnp/github.py",
+  "pnp/gitutils.py",
+  "pnp/utils.py",
+  "pnp/tui.py",
+  "pnp/help_menu.py",
+  "pnp/resolver.py",
+]
+disallow_untyped_defs = true

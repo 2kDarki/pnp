@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 # ======================= STANDARDS =======================
+from types import TracebackType
 from contextlib import contextmanager
+from collections.abc import Iterator
 from enum import Enum
 import sys
 
@@ -34,8 +36,8 @@ class TUIRunner:
         self.labels    = labels
         self.statuses  = [StepStatus.PENDING] * len(labels)
         self.console   = Console(stderr=True)
-        self._messages = [[] for _ in labels]
-        self._spinners = [None] * len(labels)
+        self._messages: list[list[str]] = [[] for _ in labels]
+        self._spinners: list[Spinner | None] = [None] * len(labels)
         self._live: Live | None = None
 
     # Safe add_message
@@ -49,7 +51,7 @@ class TUIRunner:
 
     def __enter__(self) -> "TUIRunner":
         if not self.enabled: return self
-        utils.bind_console(self.console)
+        utils.bind_console(self)
         self._live = Live(self._render(),
                      console=self.console,
                      refresh_per_second=10,
@@ -57,7 +59,9 @@ class TUIRunner:
         self._live.__enter__()
         return self
 
-    def __exit__(self, exc_type, exc, tb) -> None:
+    def __exit__(self, exc_type: type[BaseException] | None,
+                 exc: BaseException | None,
+                 tb: TracebackType | None) -> None:
         utils.bind_console(None)
         if self._live:
             self._live.__exit__(exc_type, exc, tb)
@@ -69,7 +73,7 @@ class TUIRunner:
         self._spinners[idx] = Spinner("dots", text=self.labels[idx])
         self._refresh()
 
-    def finish(self, idx: int, result) -> None:
+    def finish(self, idx: int, result: object) -> None:
         if not self.enabled: return
         status_name = getattr(result, "name", "").lower()
         if status_name == "ok":
@@ -98,8 +102,9 @@ class TUIRunner:
                 msgs_text  = Text.from_ansi(raw_msgs)
                 msgs_panel = Panel(msgs_text, box=MINIMAL,
                              padding=(0, 2))
-                renderable = Group(step_render, msgs_panel)
-            else: renderable = step_render
+                renderable: RenderableType = Group(step_render, msgs_panel)
+            else:
+                renderable = step_render
     
             table.add_row(renderable)
     
@@ -119,6 +124,7 @@ class TUIRunner:
 
 
 @contextmanager
-def tui_runner(labels: list[str], enabled: bool):
+def tui_runner(labels: list[str], enabled: bool
+              ) -> Iterator[TUIRunner]:
     runner = TUIRunner(labels, enabled)
     with runner: yield runner

@@ -1,6 +1,5 @@
 """Communicate with GitHub using GITHUB API, and create release and upload assets."""
 # ======================== STANDARDS =========================
-from typing import NoReturn
 import os
 
 # ====================== THIRD PARTIES =======================
@@ -8,6 +7,7 @@ import requests
 
 # ========================== LOCALS ==========================
 from ._constants import GITHUB as API
+from ._constants import GITHUB_UPLOADS as UPLOADS_API
 
 
 def create_release(token: str, repo: str, tag: str,
@@ -15,7 +15,7 @@ def create_release(token: str, repo: str, tag: str,
                    body: str | None = None,
                    draft: bool = False,
                    prerelease: bool = False
-                   ) -> dict | NoReturn:
+                   ) -> dict[str, object]:
     """
     Create a GitHub release.
 
@@ -45,9 +45,9 @@ def create_release(token: str, repo: str, tag: str,
 
 def upload_asset(token: str, repo: str, release_id: int,
                  filepath: str, label: str | None = None
-                 ) -> dict | NoReturn:
+                 ) -> dict[str, object]:
     """Upload asset to existing release."""
-    url = f"https://uploads.github.com/repos/{repo}/" \
+    url = f"{UPLOADS_API}/repos/{repo}/" \
         + f"releases/{release_id}/assets"
     params = {"name": os.path.basename(filepath)}
     if label: params["label"] = label

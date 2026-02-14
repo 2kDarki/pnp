@@ -1,26 +1,13 @@
-"""Constants across pnp"""
-import sys
+"""Constants across pnp."""
+from __future__ import annotations
+
+from argparse import Namespace
 
 from tuikit.textools import style_text as color
-from tuikit.logictools import any_in
 
 
-def expand_args() -> None:
-    short = set()
-    for argv in sys.argv[1:]:
-        if argv.startswith("-") and argv.count("-") == 1:
-            short.add(argv)
-
-    args = {"a", "b", "d", "i", "n", "q", "v"}
-
-    for argv in short:
-        for arg in args:
-            if arg in argv and f"-{arg}" not in sys.argv:
-                sys.argv.append(f"-{arg}")
-
-
-expand_args()
 GITHUB  = "https://api.github.com"
+GITHUB_UPLOADS = "https://uploads.github.com"
 DRYRUN  = color("[dry-run] ", "gray")
 CURSOR  = color("  >>> ", "magenta")
 GOOD    = "green"
@@ -32,9 +19,29 @@ HOLD    = 0.01
 APP     = "[pnp]"
 PNP     = color(f"{APP} ", "magenta")
 I       = 6
-PLAIN   = "--plain" in sys.argv
-DEBUG   = any_in("-d", "--debug", eq=sys.argv)
-AUTOFIX = any_in("-a", "--auto-fix", "-b", "--batch-commit",
-          eq=sys.argv)
-CI_MODE = any_in("-q", "--quiet", "--plain", eq=sys.argv) \
-       or not any_in("-i", "--interactive", eq=sys.argv)
+
+# Runtime flags: initialized once per invocation by CLI.
+PLAIN   = False
+DEBUG   = False
+AUTOFIX = False
+CI_MODE = True
+DRY_RUN = False
+QUIET   = False
+NO_TRANSMISSION = False
+GH_REPO = None
+
+
+def sync_runtime_flags(args: Namespace) -> None:
+    """Synchronize runtime flags from parsed CLI args."""
+    global PLAIN, DEBUG, AUTOFIX, CI_MODE, DRY_RUN, QUIET
+    global NO_TRANSMISSION, GH_REPO
+
+    PLAIN = bool(args.plain)
+    DEBUG = bool(args.debug)
+    AUTOFIX = bool(args.auto_fix or args.batch_commit)
+    DRY_RUN = bool(args.dry_run)
+    QUIET = bool(args.quiet)
+    NO_TRANSMISSION = bool(args.no_transmission)
+    GH_REPO = args.gh_repo
+    CI_MODE = bool(args.ci or args.quiet or args.plain
+               or not args.interactive)

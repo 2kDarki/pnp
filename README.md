@@ -72,6 +72,12 @@ git pnp . --push --publish --hooks "pytest -q; flake8"
 git pnp . --push --publish --dry-run
 ```
 
+### Environment doctor
+
+```bash
+pnp --doctor
+```
+
 ---
 
 ## Command-line Options
@@ -85,6 +91,10 @@ path (positional): Path to the project/package (default .)
 - `--interactive / -i`: Prompt per step
 
 - `--dry-run`: Show actions without executing
+
+- `--version`: Show installed `pnp` version
+
+- `--doctor`: Run local preflight checks
 
 - `--force`: Force push remote if needed
 
@@ -122,8 +132,25 @@ path (positional): Path to the project/package (default .)
 
 1. Fork the repository
 2. Create a feature branch
-3. Run tests and linters (pytest, kitty)
-4. Submit a pull request
+3. Install dev tooling:
+   ```bash
+   pip install -e ".[dev]"
+   ```
+4. Run checks locally:
+   ```bash
+   python -m compileall -q pnp tests
+   python -m mypy
+   python -m unittest discover -s tests -v
+   ```
+5. Submit a pull request
+
+## CI Workflows
+
+- `CI` workflow runs on pushes and pull requests:
+  - Python `3.10`, `3.11`, `3.12`
+  - Ubuntu, macOS, and Windows
+  - Syntax check + mypy + unittest suite + package metadata check
+- `Publish to PyPI` workflow runs on `v*` tags and is gated by the test suite.
 
 ---
 

@@ -2,7 +2,8 @@
 # ======================= STANDARDS ========================
 from enum import Enum, auto as auto_enum
 from dataclasses import dataclass
-from typing import NoReturn
+from typing import NoReturn, Protocol
+from types import ModuleType
 from pathlib import Path
 import subprocess
 import sys
@@ -15,16 +16,20 @@ from tuikit.textools import transmit as _transmit, pathit
 from tuikit.timetools import timestamp
 from tuikit.logictools import any_in
 from tuikit.textools import Align
-from rich.console import Console
 
 # ======================== LOCALS ==========================
 from ._constants import *
+from . import _constants as const
 
 
-_active_console: Console | None = None
+class MessageSink(Protocol):
+    def add_message(self, idx: int | None, msg: str) -> None: ...
 
 
-def bind_console(console: Console | None) -> None:
+_active_console: MessageSink | None = None
+
+
+def bind_console(console: MessageSink | None) -> None:
     global _active_console
     _active_console = console
 
@@ -33,7 +38,7 @@ def find_repo(path: str, batch: bool = False,
               return_none: bool = False
              ) -> str | list[str | None] | NoReturn:
     """Walks until .git present else raises RuntimeError"""
-    def found(path):
+    def found(path: str) -> str:
         path = pathit(path)
         return wrap(f"found repository in {path!r}. "
              + "Is it the correct repository? [y/n]")
@@ -41,14 +46,16 @@ def find_repo(path: str, batch: bool = False,
     if batch: curs = []
     elif return_none: return [None]
 
-    Output(quiet=any_in("-q", "--quiet", eq=sys.argv)).raw()
+    Output(quiet=const.QUIET).raw()
 
     # walk up
     cur = os.path.abspath(path)
     while True:
         if os.path.isdir(os.path.join(cur, '.git')):
-            if batch: curs.append(cur); continue
-            if CI_MODE: return cur
+            if batch:
+                curs.append(cur)
+                break
+            if const.CI_MODE: return cur
             if intent(found(cur), "y", "return"): return cur
         parent = os.path.dirname(cur)
         if parent == cur: break
@@ -61,14 +68,16 @@ def find_repo(path: str, batch: bool = False,
     for cur in paths:
         if os.path.isdir(os.path.join(cur, '.git')):
             if batch: curs.append(cur); continue
-            if CI_MODE: return cur
+            if const.CI_MODE: return cur
             if intent(found(cur), "y", "return"): return cur
 
-    if batch and curs: return curs
+    if batch and curs:
+        # Preserve discovery order while removing duplicates.
+        return list(dict.fromkeys(curs))
     raise RuntimeError("[404] repo not found")
 
 
-def detect_subpackage(path: str, monorepo_path: str) -> str:
+def detect_subpackage(path: str, monorepo_path: str) -> str | None:
     """Find subpackage by checking if pyproject.toml is present"""
     # if path contains pyproject.toml, treat it as package
     # root
@@ -82,22 +91,23 @@ def detect_subpackage(path: str, monorepo_path: str) -> str:
         if 'pyproject.toml' in files:
             if candidate.startswith(root):
                 if root != monorepo_path: return root
+    return None
 
 
-def import_deps():
+def import_deps(log_dir: Path) -> tuple[ModuleType, ModuleType]:
     """
     Dynamically import modules that rely on runtime state
 
-    These imports depend on `log_dir` being initialized, as
-    the modules internally use it for logging or error
-    handling. Deferring them ensures that setup-dependent
-    operations don't break on initial load
+    These imports depend on runtime setup (e.g. log directory).
+    Deferring them ensures setup-dependent operations do not
+    break at import time.
 
     Returns:
         tuple: (gitutils, resolver) modules
     """
     from . import resolver
     from . import gitutils
+    resolver.configure_logger(log_dir)
     return gitutils, resolver
 
 
@@ -154,7 +164,7 @@ def get_changes(cwd: str) -> dict[str, list | list[str]]:
     return changes
 
 
-def classify_files(files):
+def classify_files(files: list[str]) -> list[str]:
     types = {
           "code": [".py", ".js", ".ts", ".go", ".sh",
                    ".java", ".c", ".cpp"],
@@ -177,10 +187,10 @@ def classify_files(files):
     return list(tags)
 
 
-def gen_commit_message(repo_root):
+def gen_commit_message(repo_root: str) -> str:
     message = f"{APP} auto commit — "
     changes = get_changes(repo_root)
-    files   = []
+    files: list[str] = []
     for group in changes.values(): files.extend(group)
 
     # Fallback if no files found (maybe blob recovery just
@@ -288,21 +298,20 @@ def transmit(*text: str | tuple[str], fg: str = PROMPT,
     _transmit(msg, speed=SPEED, hold=HOLD, hue=fg)
 
 
-def intent(prompt, condition, action="exit", space=True):
+def intent(prompt: str, condition: str, action: str = "exit",
+           space: bool = True) -> bool | None:
     transmit(prompt)
     _intent = input(CURSOR).strip().lower()
     if space: print()
     _intent = _intent[0] if _intent else "n"
     if action == "return": return _intent == condition
     if _intent != condition: sys.exit(1)
+    return None
 
 
 def get_log_dir(path: str) -> Path:
     log_dir = Path(path) / "pnplog"
-
-    with open(Path().cwd() / "log_dir", "w") as f:
-        f.write(str(log_dir))
-
+    os.makedirs(log_dir, exist_ok=True)
     return log_dir
 
 
@@ -317,7 +326,7 @@ class Output:
 
     def info(self, msg: str, prefix: bool = True,
              step_idx: int | None = None) -> None:
-        msg = wrap(msg) if PLAIN else msg
+        msg = wrap(msg) if const.PLAIN else msg
         transmit(msg, fg=INFO, quiet=self.quiet, prfx=prefix,
             step_idx=step_idx)
 
@@ -336,8 +345,8 @@ class Output:
         if not msg: msg = "exiting..."
         self.warn(msg, fit, step_idx); sys.exit(1)
 
-    def raw(self, *args, **kwargs) -> None:
-        if not self.quiet: print(*args, **kwargs)
+    def raw(self, *args: object, **kwargs: object) -> None:
+        if not self.quiet: print(*args, **kwargs)  # type: ignore[call-overload]
 
 
 class StepResult(Enum):
