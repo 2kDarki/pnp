@@ -6,6 +6,7 @@
 - [x] Layered config (`default < git < env < cli`) with source introspection.
 - [x] `--check-only` gate with CI exit taxonomy (`0`, `10`, `20`).
 - [x] Git extension shim install/uninstall and git-machete integration.
+- [x] Domain regrouping completed (`cli` entrypoint, `workflow_engine`, `ops`, `audit`).
 
 ## Remaining Work To Reach Top-Tier
 

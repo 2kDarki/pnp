@@ -14,6 +14,7 @@ policies, and production-grade observability.
 - [x] Core rollback paths exist for critical workflow steps.
 - [x] Regression and integration tests cover major known failure paths.
 - [x] Human-readable diagnostics are strong in CLI/TUI mode.
+- [x] Module boundaries are grouped by concern (`ops`, `audit`, `workflow_engine`, `cli`).
 
 ---
 

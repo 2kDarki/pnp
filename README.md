@@ -304,6 +304,15 @@ export PNP_REMOTE=origin
 Release process references:
 - `CHANGELOG.md`
 - `docs/release-notes-template.md`
+- `docs/HANDOFF.md`
+
+## Internal Layout
+
+- `pnp/cli.py`: CLI argument parsing, dispatch, compatibility exports
+- `pnp/workflow_engine.py`: orchestration and workflow step sequencing
+- `pnp/ops.py`: shared process/git/editor utility operations
+- `pnp/audit.py`: doctor and check-only audit flows
+- `pnp/workflows.py`: backward-compatible re-exports from `pnp/audit.py`
 
 ## CI Workflows
 
