@@ -160,8 +160,10 @@ class Orchestrator:
 
                 for i, step in enumerate(steps):
                     ui.start(i)
+                    start = time.time()
                     msg, result = step(step_idx=i)
-                    time.sleep(1)
+                    end = time.time()
+                    if end - start < 1: time.sleep(1)
                     ui.finish(i, result)
                     if result is utils.StepResult.DONE: return None
                     if result is utils.StepResult.SKIP: continue

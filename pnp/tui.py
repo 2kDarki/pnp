@@ -91,7 +91,6 @@ class TUIRunner:
     def start(self, idx: int) -> None:
         if not self.enabled: return
         self.statuses[idx] = StepStatus.RUNNING
-        # Create a real Spinner for this step
         self._spinners[idx] = Spinner("dots",
                               text=self.labels[idx])
         self._refresh()
