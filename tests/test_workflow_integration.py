@@ -1,22 +1,21 @@
 """Integration scenarios for end-to-end workflow reliability."""
 from __future__ import annotations
 
-from argparse import Namespace
 from contextlib import redirect_stdout
-from io import StringIO
+from argparse import Namespace
 from pathlib import Path
+from io import StringIO
 import unittest
 
-from pnp import utils, gitutils
-from pnp.cli import Orchestrator
 from tests._gitfixture import GitFixture
+from pnp.cli import Orchestrator
+from pnp import utils, gitutils
 
 
 class _Resolver:
     @staticmethod
     def normalize_stderr(err: object, prefix: str = "") -> str:
-        if prefix:
-            return f"{prefix} {err}"
+        if prefix: return f"{prefix} {err}"
         return str(err)
 
 

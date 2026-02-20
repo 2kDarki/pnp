@@ -1,16 +1,16 @@
 """Regression tests for core pnp hardening fixes."""
 from __future__ import annotations
 
-from argparse import Namespace
 from contextlib import redirect_stdout
-from io import StringIO
+from unittest.mock import patch
+from argparse import Namespace
 from pathlib import Path
+from io import StringIO
 import subprocess
 import tempfile
 import unittest
-import sys
-from unittest.mock import patch
 import json
+import sys
 
 from pnp import _constants as const
 from pnp import utils

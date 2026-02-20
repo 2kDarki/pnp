@@ -4,9 +4,9 @@ from __future__ import annotations
 from argparse import Namespace
 import unittest
 
+from tests._gitfixture import GitFixture
 from pnp import _constants as const
 from pnp import gitutils
-from tests._gitfixture import GitFixture
 
 
 def _reset_flags() -> None:

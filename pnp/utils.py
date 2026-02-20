@@ -235,7 +235,7 @@ def gen_commit_message(repo_root: str) -> str:
             sfx = "; " if msg else ""
             if len(files) > 1:
                 sep = ", and " if len(files) > 2 else " and "
-                text  = ", ".join(files[:-1])
+                text = ", ".join(files[:-1])
                 text += sep + files[-1]
             else: text = files[0]
             msg += f"{sfx}{action}: {text}"
@@ -246,12 +246,12 @@ def gen_commit_message(repo_root: str) -> str:
     if not tags: return message + "misc changes"
 
     if len(tags) > 1:
-        sep = ", and" if len(files) > 2 else " and"
+        sep = ", and" if len(tags) > 2 else " and"
         text = ", ".join(sorted(tags[:-1]))
         text += f"{sep} {tags[-1]}"
     else: text = tags[0]
 
-    return message + text + " updated"
+    return message + "updated " + text
 
 
 def gen_changelog(path: str, since: str | None,

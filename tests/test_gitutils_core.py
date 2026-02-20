@@ -1,9 +1,9 @@
 """Unit tests for gitutils command behavior."""
 from __future__ import annotations
 
-from argparse import Namespace
 from subprocess import CompletedProcess
 from unittest.mock import patch
+from argparse import Namespace
 import unittest
 
 from pnp import _constants as const

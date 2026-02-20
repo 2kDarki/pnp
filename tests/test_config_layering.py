@@ -1,15 +1,15 @@
 """Tests for layered config precedence (default < pyproject < git < env < cli)."""
 from __future__ import annotations
 
+from unittest.mock import patch
 from argparse import Namespace
 from pathlib import Path
-from unittest.mock import patch
 import tempfile
-import os
 import unittest
+import os
 
-from pnp import config
 from pnp.cli import _build_parser
+from pnp import config
 
 
 class ConfigLayeringTests(unittest.TestCase):

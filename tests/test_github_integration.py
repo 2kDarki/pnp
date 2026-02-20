@@ -1,13 +1,14 @@
 """Integration-style tests for GitHub API helpers using a local mock server."""
 from __future__ import annotations
 
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 from tempfile import TemporaryDirectory
 from threading import Thread
-from urllib.parse import parse_qs, urlparse
-import json
+from pathlib import Path
 import unittest
+import json
 
 from pnp import github
 

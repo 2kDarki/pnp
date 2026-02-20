@@ -1,10 +1,10 @@
 """Regression tests for machine-readable JSON contracts."""
 from __future__ import annotations
 
-import json
 import subprocess
-import sys
 import unittest
+import json
+import sys
 
 
 def _extract_json(stdout: str) -> dict[str, object]:

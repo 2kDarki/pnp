@@ -4,8 +4,8 @@ from __future__ import annotations
 from argparse import Namespace
 import unittest
 
-from pnp import utils
 from pnp.cli import Orchestrator
+from pnp import utils
 
 
 def _args(**overrides: object) -> Namespace:
