@@ -1,13 +1,13 @@
 """CLI smoke tests for stable user-facing behavior."""
 from __future__ import annotations
 
+from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 import json
+import sys
 import os
-from pathlib import Path
 
 
 class CliSmokeTests(unittest.TestCase):

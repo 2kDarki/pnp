@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any, cast
 from pathlib import Path
 import argparse
+import time
 import sys
 import os
 
@@ -160,6 +161,7 @@ class Orchestrator:
                 for i, step in enumerate(steps):
                     ui.start(i)
                     msg, result = step(step_idx=i)
+                    time.sleep(1)
                     ui.finish(i, result)
                     if result is utils.StepResult.DONE: return None
                     if result is utils.StepResult.SKIP: continue
