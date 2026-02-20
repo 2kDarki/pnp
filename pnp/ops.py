@@ -2,15 +2,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import subprocess
+import tempfile
 import argparse
+import shutil
+import shlex
+import time
 import json
 import os
 import re
-import shlex
-import shutil
-import subprocess
-import tempfile
-import time
 
 from . import _constants as const
 from . import utils
@@ -24,13 +24,8 @@ def command_exists(name: str) -> bool:
 def run_command(args: list[str], cwd: str | None = None
                ) -> subprocess.CompletedProcess[str]:
     """Run a command and capture text output."""
-    return subprocess.run(
-        args,
-        cwd=cwd,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    return subprocess.run(args, cwd=cwd, check=False,
+           capture_output=True, text=True)
 
 
 def run_git(repo: str, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -46,32 +41,31 @@ def run_machete(repo: str, dry_run: bool,
                ) -> tuple[str | None, utils.StepResult]:
     """Run git-machete status/traverse operations."""
     if not command_exists("git-machete"):
-        return "git-machete not found in PATH", utils.StepResult.ABORT
+        return "git-machete not found in PATH", \
+               utils.StepResult.ABORT
 
     commands: list[tuple[str, list[str]]] = []
     commands.append(("status", ["git", "machete", "status"]))
     if machete_sync:
-        commands.append((
-            "traverse --fetch --sync",
-            ["git", "machete", "traverse", "--fetch", "--sync"],
-        ))
+        commands.append(("traverse --fetch --sync",
+            ["git", "machete", "traverse", "--fetch",
+            "--sync"]))
     elif machete_traverse:
-        commands.append((
-            "traverse",
-            ["git", "machete", "traverse"],
-        ))
+        commands.append(("traverse",
+            ["git", "machete", "traverse"]))
 
     for label, cmd in commands:
         if dry_run:
-            out.info(const.DRYRUN + "would run: " + " ".join(cmd),
-                     step_idx=step_idx)
+            out.info(const.DRYRUN + "would run: "
+               + " ".join(cmd), step_idx=step_idx)
             continue
         cp = run_command(cmd, cwd=repo)
         if cp.returncode != 0:
             detail = cp.stderr.strip() or cp.stdout.strip() \
-                or f"git machete {label} failed"
+                  or f"git machete {label} failed"
             return detail, utils.StepResult.ABORT
-        out.success(f"git machete {label}: ok", step_idx=step_idx)
+        out.success(f"git machete {label}: ok",
+            step_idx=step_idx)
     return None, utils.StepResult.OK
 
 
@@ -86,13 +80,11 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     capture = not no_transmission \
           and not utils.any_in(exclude, eq=cmd)
 
-    parts = cmd.split("::")
+    parts  = cmd.split("::")
     prefix = "run"
-    if len(parts) == 2:
-        prefix, cmd = parts
+    if len(parts) == 2: prefix, cmd = parts
     args = cmd.split()
-    if not args:
-        raise ValueError("hook command is empty")
+    if not args: raise ValueError("hook command is empty")
 
     disallowed = {
         "rm", "mv", "dd", "shutdown", "reboot", "mkfs",
@@ -105,21 +97,18 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
         raise ValueError(err)
 
     add = f" {const.DRYRUN}skips" if dryrun else ""
-    m = utils.wrap(f"[{prefix}] {cmd}{add}")
+    m   = utils.wrap(f"[{prefix}] {cmd}{add}")
     utils.transmit(m, fg=const.GOOD)
-    if dryrun:
-        return 0
+    if dryrun: return 0
 
-    if "pytest" in cmd:
-        print()
+    if "pytest" in cmd: print()
 
-    proc = subprocess.run(cmd, cwd=cwd, shell=True,
+    proc   = subprocess.run(cmd, cwd=cwd, shell=True,
              check=False, text=True, capture_output=capture)
-    code = proc.returncode
+    code   = proc.returncode
     stdout = proc.stdout
     stderr = proc.stderr
-    if not capture or stderr:
-        print()
+    if not capture or stderr: print()
     if code != 0:
         err = f"[{code}]: {cmd} {stderr}"
         raise RuntimeError(err)
@@ -140,28 +129,29 @@ def manage_git_extension_install(out: utils.Output,
         raw_path = os.environ.get("PATH", "")
         norm_target = os.path.normcase(str(dir_path.resolve()))
         for segment in raw_path.split(os.pathsep):
-            if not segment.strip():
-                continue
+            if not segment.strip(): continue
             try:
                 norm_segment = os.path.normcase(str(Path(segment).expanduser().resolve()))
-            except OSError:
-                continue
-            if norm_segment == norm_target:
-                return True
+            except OSError: continue
+            if norm_segment == norm_target: return True
         return False
 
-    home = Path.home()
-    bin_dir = Path(target_dir).expanduser() if target_dir else \
-        (home / ".local" / "bin")
+    home    = Path.home()
+    bin_dir = Path(target_dir).expanduser() if target_dir \
+         else (home / ".local" / "bin")
 
     def shim_specs() -> list[tuple[Path, str, int | None]]:
         if os.name == "nt":
             return [
-                (bin_dir / "git-pnp.cmd", "@echo off\r\npython -m pnp %*\r\n", None),
-                (bin_dir / "git-pnp", "#!/usr/bin/env sh\nexec python -m pnp \"$@\"\n", 0o755),
+                (bin_dir / "git-pnp.cmd",
+                "@echo off\r\npython -m pnp %*\r\n", None),
+                (bin_dir / "git-pnp", 
+                "#!/usr/bin/env sh\nexec python -m "
+                "pnp \"$@\"\n", 0o755),
             ]
         return [
-            (bin_dir / "git-pnp", "#!/usr/bin/env sh\nexec python -m pnp \"$@\"\n", 0o755),
+            (bin_dir / "git-pnp", "#!/usr/bin/env sh\nexec "
+            "python -m pnp \"$@\"\n", 0o755),
         ]
 
     scripts = shim_specs()
@@ -198,25 +188,30 @@ def show_effective_config(args: argparse.Namespace,
                           out: utils.Output) -> int:
     """Print the effective merged runtime configuration."""
     keys = [
-        "path", "batch_commit", "hooks", "changelog_file", "push",
-        "publish", "remote", "force", "no_transmission", "quiet",
-        "plain", "verbose", "debug", "auto_fix", "dry_run", "ci",
-        "interactive", "gh_release", "gh_repo", "gh_token",
-        "gh_draft", "gh_prerelease", "gh_assets", "check_only",
+        "path", "batch_commit", "hooks", "changelog_file",
+        "push", "publish", "remote", "force",
+        "no_transmission", "quiet", "plain", "verbose",
+        "debug", "auto_fix", "dry_run", "ci", "interactive",
+        "gh_release", "gh_repo", "gh_token", "gh_draft",
+        "gh_prerelease", "gh_assets", "check_only",
         "check_json", "strict", "tag_prefix", "tag_message",
-        "edit_message", "editor", "tag_sign", "tag_bump", "doctor",
-        "doctor_json", "doctor_report", "show_config", "install_git_ext",
+        "edit_message", "editor", "tag_sign", "tag_bump",
+        "doctor", "doctor_json", "doctor_report",
+        "show_config", "install_git_ext",
         "uninstall_git_ext", "git_ext_dir", "machete_status",
         "machete_sync", "machete_traverse",
     ]
     effective = {k: getattr(args, k, None) for k in keys}
-    sources = getattr(args, "_pnp_config_sources", None)
+    sources   = getattr(args, "_pnp_config_sources", None)
     if isinstance(sources, dict):
-        effective["_sources"] = {k: sources.get(k, "default") for k in keys}
+        effective["_sources"] = {
+            k: sources.get(k, "default") for k in keys
+        }
     files = getattr(args, "_pnp_config_files", None)
     if isinstance(files, dict):
         effective["_config_files"] = files
-    diagnostics = getattr(args, "_pnp_config_diagnostics", None)
+    diagnostics = getattr(args, "_pnp_config_diagnostics",
+                  None)
     if isinstance(diagnostics, list):
         effective["_config_diagnostics"] = diagnostics
     if isinstance(effective.get("gh_token"), str) and effective["gh_token"]:
@@ -228,24 +223,20 @@ def show_effective_config(args: argparse.Namespace,
 def cleanup_temp_files(paths: list[str]) -> None:
     """Best-effort cleanup of temporary files."""
     for path in paths:
-        try:
-            os.unlink(path)
-        except OSError:
-            continue
+        try: os.unlink(path)
+        except OSError: continue
 
 
 def git_core_editor(repo: str | None) -> str | None:
     """Resolve `git config core.editor` for a repository."""
-    if not repo:
-        return None
+    if not repo: return None
     cp = subprocess.run(
         ["git", "-C", repo, "config", "--get", "core.editor"],
         check=False,
         capture_output=True,
         text=True,
     )
-    if cp.returncode != 0:
-        return None
+    if cp.returncode != 0: return None
     editor = cp.stdout.strip()
     return editor or None
 
@@ -261,25 +252,19 @@ def resolve_editor_command(preferred: str | None,
         os.environ.get("VISUAL"),
         os.environ.get("EDITOR"),
     ]
-    if os.name == "nt":
-        candidates.append("notepad")
-    else:
-        candidates.extend(("nano", "vi"))
+    if os.name == "nt": candidates.append("notepad")
+    else: candidates.extend(("nano", "vi"))
 
     seen: set[str] = set()
     for candidate in candidates:
-        if not candidate:
-            continue
+        if not candidate: continue
         value = candidate.strip()
-        if not value or value in seen:
-            continue
+        if not value or value in seen: continue
         seen.add(value)
         try:
             parts = shlex.split(value, posix=(os.name != "nt"))
-        except ValueError:
-            parts = [value]
-        if not parts:
-            continue
+        except ValueError: parts = [value]
+        if not parts: continue
         binary = parts[0]
         if os.path.isabs(binary) or shutil.which(binary):
             return parts
@@ -288,9 +273,11 @@ def resolve_editor_command(preferred: str | None,
     )
 
 
-def edit_message_in_editor(initial: str, kind: str, editor: list[str],
+def edit_message_in_editor(initial: str, kind: str,
+                           editor: list[str],
                            out: utils.Output,
-                           step_idx: int | None = None) -> tuple[str, str]:
+                           step_idx: int | None = None
+                           ) -> tuple[str, str]:
     """Open editor using a temp file and return (message, temp_path)."""
     fd, path = tempfile.mkstemp(prefix="pnp-msg-", suffix=".txt")
     os.close(fd)
@@ -304,13 +291,11 @@ def edit_message_in_editor(initial: str, kind: str, editor: list[str],
     Path(path).write_text("\n".join(header) + "\n", encoding="utf-8")
     out.info(f"opening editor: {' '.join(editor)}", step_idx=step_idx)
     utils.suspend_console()
-    try:
-        cp = subprocess.run([*editor, path], check=False)
-    finally:
-        utils.resume_console()
+    try: cp = subprocess.run([*editor, path], check=False)
+    finally: utils.resume_console()
     if cp.returncode != 0:
         raise RuntimeError(f"editor exited with status {cp.returncode}")
-    raw = Path(path).read_text(encoding="utf-8")
+    raw  = Path(path).read_text(encoding="utf-8")
     text = "\n".join(
         line for line in raw.splitlines()
         if not line.lstrip().startswith("#")
@@ -329,8 +314,7 @@ def git_head(path: str) -> str | None:
         capture_output=True,
         text=True,
     )
-    if cp.returncode != 0:
-        return None
+    if cp.returncode != 0: return None
     head = cp.stdout.strip()
     return head or None
 

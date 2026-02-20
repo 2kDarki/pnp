@@ -63,8 +63,7 @@ def help_msg(found: bool = False,
     """
     _help = any(h in sys.argv for h in H_FLAGS)
 
-    if not _help:
-        return "pnp git automation CLI"
+    if not _help: return "pnp git automation CLI"
 
     location = None
     if _help:
@@ -204,39 +203,46 @@ def print_help(section: int = 0) -> None:
                        + "actions")}
     Debug mode         {desc("-d / --debug to show full "
                        + "traceback when an error occurs")}
-    Doctor mode        {desc("--doctor to run local preflight "
-                       + "audit checks (runtime, repo hygiene, "
-                       + "metadata, release readiness)")}
+    Doctor mode        {desc("--doctor to run local "
+                       + "preflight audit checks (runtime, "
+                       + "repo hygiene, metadata, release "
+                       + "readiness)")}
     Doctor JSON        {desc("--doctor-json to print doctor "
                        + "results in machine-readable JSON")}
     Doctor report      {desc("--doctor-report FILE to save "
                        + "doctor JSON report to a file")}
-    Check-only         {desc("--check-only to run non-mutating "
-                       + "workflow preflight and exit")}
-    Strict mode        {desc("--strict to treat warnings as blockers "
-                       + "(useful with --check-only in CI)")}
-    Check JSON         {desc("--check-json to emit machine-readable "
-                       + "JSON summary/findings for --check-only")}
-    Check-only codes   {desc("--check-only returns 0 (clean), "
-                       + "10 (warnings), 20 (blockers)")}
+    Check-only         {desc("--check-only to run "
+                       + "non-mutating workflow preflight "
+                       + "and exit")}
+    Strict mode        {desc("--strict to treat warnings as "
+                       + "blockers (useful with "
+                       + "--check-only in CI)")}
+    Check JSON         {desc("--check-json to emit "
+                       + "machine-readable JSON summary/"
+                       + "findings for --check-only")}
+    Check-only codes   {desc("--check-only returns 0 "
+                       + "(clean), 10 (warnings), 20 "
+                       + "(blockers)")}
     Version            {desc("--version to print installed "
                        + "pnp version")}
-    Show config        {desc("--show-config to print effective "
-                       + "runtime configuration after applying "
-                       + "defaults, pyproject, git config, env, "
-                       + "and CLI")}
+    Show config        {desc("--show-config to print "
+                       + "effective runtime configuration "
+                       + "after applying defaults, pyproject"
+                       + ", git config, env, and CLI")}
     Install extension  {desc("--install-git-ext to install "
                        + "a git-pnp shim for `git pnp`")}
     Remove extension   {desc("--uninstall-git-ext to remove "
                        + "the installed git-pnp shim")}
-    Extension dir      {desc("--git-ext-dir PATH to set where "
-                       + "the git-pnp shim is installed")}
-    Machete status     {desc("-s / --status to run `git machete "
-                       + "status` and fail on issues")}
-    Machete sync       {desc("-S / --sync to run `git machete "
-                       + "traverse --fetch --sync`")}
-    Machete traverse   {desc("-t / --traverse to run `git machete "
-                       + "traverse`")}
+    Extension dir      {desc("--git-ext-dir PATH to set "
+                       + "where the git-pnp shim is "
+                       + "installed")}
+    Machete status     {desc("-s / --status to run `git "
+                       + "machete status` and fail on"
+                       + "issues")}
+    Machete sync       {desc("-S / --sync to run `git "
+                       + "machete traverse --fetch --sync`")}
+    Machete traverse   {desc("-t / --traverse to run `git "
+                       + "machete traverse`")}
         """
     elif section == 1:  # GitHub options
         options = f"""{color(" 2. Github", GOOD)}
@@ -271,10 +277,12 @@ def print_help(section: int = 0) -> None:
                        + "'no' or press enter/return for it "
                        + "to use that message, otherwise it "
                        + "would be overriden")}
-    Edit message       {desc("--edit-message to open your editor "
-                       + "for commit message editing via a temp file")}
-    Editor             {desc("--editor '<cmd>' to set editor command "
-                       + "(default inherits git core.editor / env vars)")}
+    Edit message       {desc("--edit-message to open your "
+                       + "editor for commit message editing "
+                       + "via a temp file")}
+    Editor             {desc("--editor '<cmd>' to set "
+                       + "editor command (default inherits "
+                       + "git core.editor / env vars)")}
     Sign tag           {desc("--tag-sign for GPG signing")}
         """
     print(options)

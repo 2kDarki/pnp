@@ -45,7 +45,7 @@ Use `ERROR_HANDLING_TASKLIST.md` as source of truth for next major upgrade track
 Recommended execution order:
 1. Phase 1: define and lock a canonical error envelope contract.
 2. Phase 2: split resolver into classifier/policy/remediation boundaries.
-3. Phase 5.1: build golden stderr corpus and deterministic snapshot tests.
+3. Phase 2.1: build golden stderr corpus and deterministic snapshot tests.
 4. Phase 3: add retry/remediation policies with explicit safety gates.
 5. Phase 4: structured logs and debug bundle.
 

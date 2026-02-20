@@ -32,22 +32,19 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
       original proc code/output
     - `tries` stops repeated retries (max 1 retry)
     """
-    if const.DRY_RUN:
-        return 1, DRYRUN + "skips process"
-    proc = subprocess.run(["git"] + args, cwd=cwd, text=True,
-           capture_output=capture)
+    if const.DRY_RUN: return 1, DRYRUN + "skips process"
+    proc   = subprocess.run(["git"] + args, cwd=cwd,
+             text=True, capture_output=capture)
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     out    = (stdout or stderr).strip()
 
     # Successful git commands often emit progress/warnings on
     # stderr. Treat non-zero return codes as failure signals.
-    if proc.returncode == 0:
-        return 0, out
+    if proc.returncode == 0: return 0, out
 
     # nothing to handle
-    if not stderr:
-        return proc.returncode, out
+    if not stderr: return proc.returncode, out
 
     # quick bypass for benign message
     if "no upstream configured" in stderr.lower():
@@ -79,8 +76,7 @@ def is_git_repo(path: str) -> bool:
 
 def git_init(path: str) -> None:
     rc, out = run_git(["init"], cwd=path)
-    if rc != 0:
-        raise RuntimeError(f"git init failed: {out}")
+    if rc != 0: raise RuntimeError(f"git init failed: {out}")
 
 
 def current_branch(path: str) -> str | None:
@@ -102,8 +98,7 @@ def has_uncommitted(path: str) -> bool:
 
 def stage_all(path: str) -> None:
     rc, out = run_git(["add", "-A"], cwd=path)
-    if rc != 0:
-        raise RuntimeError("git add failed: " + out)
+    if rc != 0: raise RuntimeError("git add failed: " + out)
 
 
 def commit(path: str, message: str | None,
@@ -163,8 +158,7 @@ def create_tag(path: str, tag: str,
     else: args += [tag]
     if sign: args.insert(1, "-s")
     rc, out = run_git(args, cwd=path)
-    if rc != 0:
-        raise RuntimeError("git tag failed: " + out)
+    if rc != 0: raise RuntimeError("git tag failed: " + out)
 
 
 def push(path: str, remote: str = "origin",
@@ -173,11 +167,9 @@ def push(path: str, remote: str = "origin",
     should_push_branch = branch is not None or not push_tags
     if should_push_branch:
         args = ["push"]
-        if force:
-            args.append("--force")
+        if force: args.append("--force")
         args.append(remote)
-        if branch:
-            args.append(branch)
+        if branch: args.append(branch)
         rc, out = run_git(args, cwd=path)
         if rc != 0:
             raise RuntimeError("git push failed: " + out)

@@ -2,29 +2,28 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
-import argparse
-import json
-import os
+from pathlib import Path
 import subprocess
-import sys
+import argparse
 import tempfile
 import time
+import json
+import sys
+import os
 
-try:
-    import tomllib
+try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
 from . import _constants as const
+from .tui import tui_runner
+from .ops import run_hook
 from . import utils
 from . import ops
-from .ops import run_hook
-from .tui import tui_runner
 
 DOCTOR_SCHEMA = "pnp.doctor.v1"
-CHECK_SCHEMA = "pnp.check.v1"
+CHECK_SCHEMA  = "pnp.check.v1"
 
 
 def _find_repo_noninteractive(path: str) -> str | None:
@@ -34,13 +33,11 @@ def _find_repo_noninteractive(path: str) -> str | None:
         if os.path.isdir(os.path.join(cur, ".git")):
             return cur
         parent = os.path.dirname(cur)
-        if parent == cur:
-            break
+        if parent == cur: break
         cur = parent
 
     base = os.path.abspath(path)
-    if not os.path.isdir(base):
-        return None
+    if not os.path.isdir(base): return None
     for child in os.listdir(base):
         cand = os.path.join(base, child)
         if os.path.isdir(os.path.join(cand, ".git")):
@@ -51,18 +48,18 @@ def _find_repo_noninteractive(path: str) -> str | None:
 def run_doctor(path: str, out: utils.Output,
                json_mode: bool = False,
                report_file: str | None = None,
-               repo_finder: Callable[[str], str | None] | None = None) -> int:
+               repo_finder: Callable[[str], str | None] |
+                            None = None) -> int:
     """Run local environment audit checks."""
     if repo_finder is None:
         repo_finder = _find_repo_noninteractive
     original_quiet = out.quiet
-    if json_mode:
-        out.quiet = True
+    if json_mode: out.quiet = True
     failures = 0
     warnings = 0
     checks: list[dict[str, str]] = []
     step_delay = 0.25
-    labels = [
+    labels     = [
         "Python runtime",
         "Git availability",
         "Git identity",
@@ -75,30 +72,35 @@ def run_doctor(path: str, out: utils.Output,
         "Test footprint",
         "GitHub token",
     ]
-    use_ui = bool(const.CI_MODE and not const.PLAIN and sys.stdout.isatty())
+    use_ui = bool(const.CI_MODE and not const.PLAIN
+         and sys.stdout.isatty())
 
     def pause_step() -> None:
-        if use_ui:
-            time.sleep(step_delay)
+        if use_ui: time.sleep(step_delay)
 
     def add_check(name: str, status: str, details: str) -> None:
-        checks.append({"name": name, "status": status, "details": details})
+        checks.append({
+            "name": name,
+            "status": status,
+            "details": details
+        })
 
-    def git_run(repo: str, args: list[str]) -> subprocess.CompletedProcess[str]:
+    def git_run(repo: str, args: list[str]
+               ) -> subprocess.CompletedProcess[str]:
         return ops.run_git(repo, args)
 
     with tui_runner(labels, enabled=use_ui) as ui:
-        if use_ui:
-            utils.bind_console(ui)
+        if use_ui: utils.bind_console(ui)
 
         ui.start(0)
-        py_ver = sys.version.split()[0]
-        py_ok = sys.version_info >= (3, 10)
+        py_ver    = sys.version.split()[0]
+        py_ok     = sys.version_info >= (3, 10)
         py_detail = f"{py_ver} (>=3.10 required)"
         if py_ok:
             add_check("python", "ok", py_detail)
             out.success(f"Python: {py_detail}", step_idx=0)
-            out.info(f"Executable: {sys.executable}", step_idx=0)
+            out.info(f"Executable: {sys.executable}",
+                step_idx=0)
             pause_step()
             ui.finish(0, utils.StepResult.OK)
         else:
@@ -109,8 +111,9 @@ def run_doctor(path: str, out: utils.Output,
             ui.finish(0, utils.StepResult.FAIL)
 
         ui.start(1)
-        git_bin = "git" if ops.command_exists("git") else None
-        git_ok = False
+        git_bin = "git" if ops.command_exists("git") \
+             else None
+        git_ok  = False
         if not git_bin:
             failures += 1
             add_check("git", "fail", "not found in PATH")
@@ -118,7 +121,7 @@ def run_doctor(path: str, out: utils.Output,
             pause_step()
             ui.finish(1, utils.StepResult.FAIL)
         else:
-            cp = ops.run_command([git_bin, "--version"])
+            cp     = ops.run_command([git_bin, "--version"])
             git_ok = cp.returncode == 0
             if git_ok:
                 detail = cp.stdout.strip()
@@ -128,8 +131,10 @@ def run_doctor(path: str, out: utils.Output,
                 ui.finish(1, utils.StepResult.OK)
             else:
                 failures += 1
-                add_check("git", "fail", "detected but unusable")
-                out.warn("Git: detected but unusable", step_idx=1)
+                add_check("git", "fail",
+                    "detected but unusable")
+                out.warn("Git: detected but unusable",
+                    step_idx=1)
                 pause_step()
                 ui.finish(1, utils.StepResult.FAIL)
 
@@ -142,25 +147,26 @@ def run_doctor(path: str, out: utils.Output,
                 ["git", "config", "--global", "user.email"],
             ).stdout.strip()
             missing: list[str] = []
-            if not user:
-                missing.append("user.name")
-            if not email:
-                missing.append("user.email")
+            if not user: missing.append("user.name")
+            if not email: missing.append("user.email")
             if missing:
                 warnings += 1
                 detail = ", ".join(missing)
                 add_check("git_identity", "warn", detail)
-                out.warn("Missing global Git identity: " + detail, step_idx=2)
+                out.warn("Missing global Git identity: "
+                   + detail, step_idx=2)
                 pause_step()
                 ui.finish(2, utils.StepResult.ABORT)
             else:
                 add_check("git_identity", "ok", "configured")
-                out.success("Global Git identity configured", step_idx=2)
+                out.success("Global Git identity configured",
+                    step_idx=2)
                 pause_step()
                 ui.finish(2, utils.StepResult.OK)
         else:
             warnings += 1
-            add_check("git_identity", "warn", "skipped (Git unavailable)")
+            add_check("git_identity", "warn",
+                "skipped (Git unavailable)")
             out.warn("Skipped (Git unavailable)", step_idx=2)
             pause_step()
             ui.finish(2, utils.StepResult.ABORT)
@@ -169,13 +175,18 @@ def run_doctor(path: str, out: utils.Output,
         repo = repo_finder(path) if git_ok else None
         if repo:
             add_check("repository", "ok", repo)
-            out.success(f"Detected at {utils.pathit(repo)}", step_idx=3)
+            out.success(f"Detected at {utils.pathit(repo)}",
+                step_idx=3)
             pause_step()
             ui.finish(3, utils.StepResult.OK)
         else:
             warnings += 1
-            add_check("repository", "warn", "not found near target path")
-            out.warn("No repository detected near target path", step_idx=3)
+            add_check("repository", "warn",
+                "not found near target path")
+            out.warn(
+                "No repository detected near target path",
+                step_idx=3
+            )
             pause_step()
             ui.finish(3, utils.StepResult.ABORT)
 
@@ -183,58 +194,78 @@ def run_doctor(path: str, out: utils.Output,
         if repo:
             cp = git_run(repo, ["status", "--porcelain"])
             if cp.returncode == 0:
-                dirty = [line for line in cp.stdout.splitlines() if line.strip()]
+                dirty = [line for line in cp.stdout
+                        .splitlines() if line.strip()]
                 if dirty:
                     warnings += 1
-                    add_check("working_tree", "warn", f"{len(dirty)} pending change(s)")
-                    out.warn(f"Working tree has {len(dirty)} pending change(s)", step_idx=4)
-                    preview = ", ".join(line[3:] for line in dirty[:4])
+                    add_check("working_tree", "warn",
+                        f"{len(dirty)} pending change(s)")
+                    out.warn("Working tree has "
+                        f"{len(dirty)} pending change(s)",
+                        step_idx=4)
+                    preview = ", ".join(line[3:] for line in
+                              dirty[:4])
                     if preview:
-                        out.info(f"Sample: {preview}", step_idx=4)
+                        out.info(f"Sample: {preview}",
+                            step_idx=4)
                     pause_step()
                     ui.finish(4, utils.StepResult.ABORT)
                 else:
                     add_check("working_tree", "ok", "clean")
-                    out.success("Working tree is clean", step_idx=4)
+                    out.success("Working tree is clean",
+                        step_idx=4)
                     pause_step()
                     ui.finish(4, utils.StepResult.OK)
             else:
                 warnings += 1
-                add_check("working_tree", "warn", "unable to inspect")
-                out.warn("Unable to inspect working tree", step_idx=4)
+                add_check("working_tree", "warn",
+                    "unable to inspect")
+                out.warn("Unable to inspect working tree",
+                    step_idx=4)
                 pause_step()
                 ui.finish(4, utils.StepResult.ABORT)
         else:
             warnings += 1
-            add_check("working_tree", "warn", "skipped (no repository)")
+            add_check("working_tree", "warn",
+                "skipped (no repository)")
             out.warn("Skipped (no repository)", step_idx=4)
             pause_step()
             ui.finish(4, utils.StepResult.ABORT)
 
         ui.start(5)
         if repo:
-            branch_cp = git_run(repo, ["rev-parse", "--abbrev-ref", "HEAD"])
-            branch = branch_cp.stdout.strip() if branch_cp.returncode == 0 else ""
+            branch_cp = git_run(repo, ["rev-parse",
+                        "--abbrev-ref", "HEAD"])
+            branch = branch_cp.stdout.strip() \
+                  if branch_cp.returncode == 0 else ""
             if not branch or branch == "HEAD":
                 warnings += 1
-                add_check("branch_tracking", "warn", "detached HEAD")
-                out.warn("Detached HEAD; branch tracking unavailable", step_idx=5)
+                add_check("branch_tracking", "warn",
+                    "detached HEAD")
+                out.warn("Detached HEAD; branch tracking "
+                    "unavailable", step_idx=5)
                 pause_step()
                 ui.finish(5, utils.StepResult.ABORT)
             else:
                 upstream_cp = git_run(
-                    repo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]
+                    repo, ["rev-parse", "--abbrev-ref",
+                    "--symbolic-full-name", "@{u}"]
                 )
                 if upstream_cp.returncode != 0:
                     warnings += 1
-                    detail = f"branch '{branch}' has no upstream"
-                    add_check("branch_tracking", "warn", detail)
-                    out.warn(f"Branch '{branch}' has no upstream", step_idx=5)
+                    detail = f"branch '{branch}' has no " \
+                           + "upstream"
+                    add_check("branch_tracking", "warn",
+                        detail)
+                    out.warn(f"Branch '{branch}' has no "
+                        "upstream", step_idx=5)
                     pause_step()
                     ui.finish(5, utils.StepResult.ABORT)
                 else:
                     upstream = upstream_cp.stdout.strip()
-                    delta_cp = git_run(repo, ["rev-list", "--left-right", "--count", f"{upstream}...HEAD"])
+                    delta_cp = git_run(repo, ["rev-list",
+                               "--left-right", "--count",
+                               f"{upstream}...HEAD"])
                     if delta_cp.returncode == 0:
                         parts = delta_cp.stdout.strip().split()
                         behind = int(parts[0]) if parts else 0
@@ -265,7 +296,8 @@ def run_doctor(path: str, out: utils.Output,
                         ui.finish(5, utils.StepResult.ABORT)
         else:
             warnings += 1
-            add_check("branch_tracking", "warn", "skipped (no repository)")
+            add_check("branch_tracking", "warn", "skipped "
+                "(no repository)")
             out.warn("Skipped (no repository)", step_idx=5)
             pause_step()
             ui.finish(5, utils.StepResult.ABORT)
@@ -283,7 +315,8 @@ def run_doctor(path: str, out: utils.Output,
                 ui.finish(6, utils.StepResult.OK)
             elif cp.returncode == 0:
                 warnings += 1
-                add_check("remotes", "warn", "none configured")
+                add_check("remotes", "warn",
+                    "none configured")
                 out.warn("No remotes configured", step_idx=6)
                 pause_step()
                 ui.finish(6, utils.StepResult.ABORT)
@@ -302,22 +335,27 @@ def run_doctor(path: str, out: utils.Output,
 
         ui.start(7)
         if repo:
-            cp = git_run(repo, ["fsck", "--no-progress", "--no-dangling"])
+            cp = git_run(repo, ["fsck", "--no-progress",
+                 "--no-dangling"])
             if cp.returncode == 0:
-                add_check("repository_integrity", "ok", "git fsck passed")
-                out.success("Git object database integrity looks good", step_idx=7)
+                add_check("repository_integrity", "ok",
+                    "git fsck passed")
+                out.success("Git object database integrity "
+                    "looks good", step_idx=7)
                 pause_step()
                 ui.finish(7, utils.StepResult.OK)
             else:
                 failures += 1
                 detail = cp.stderr.strip() or cp.stdout.strip() or "git fsck failed"
-                add_check("repository_integrity", "fail", detail)
+                add_check("repository_integrity", "fail",
+                    detail)
                 out.warn(detail, step_idx=7)
                 pause_step()
                 ui.finish(7, utils.StepResult.FAIL)
         else:
             warnings += 1
-            add_check("repository_integrity", "warn", "skipped (no repository)")
+            add_check("repository_integrity", "warn",
+                "skipped (no repository)")
             out.warn("Skipped (no repository)", step_idx=7)
             pause_step()
             ui.finish(7, utils.StepResult.ABORT)
@@ -330,7 +368,8 @@ def run_doctor(path: str, out: utils.Output,
             pyproject = Path(pkg_root) / "pyproject.toml"
             if not pyproject.exists():
                 warnings += 1
-                add_check("project_metadata", "warn", "missing pyproject.toml")
+                add_check("project_metadata", "warn",
+                    "missing pyproject.toml")
                 out.warn(f"Missing pyproject.toml in {utils.pathit(pkg_root)}", step_idx=8)
                 pause_step()
                 ui.finish(8, utils.StepResult.ABORT)
@@ -339,12 +378,14 @@ def run_doctor(path: str, out: utils.Output,
                     data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
                 except Exception as e:
                     warnings += 1
-                    add_check("project_metadata", "warn", f"invalid pyproject.toml: {e}")
-                    out.warn(f"Invalid pyproject.toml: {e}", step_idx=8)
+                    add_check("project_metadata", "warn",
+                        f"invalid pyproject.toml: {e}")
+                    out.warn(f"Invalid pyproject.toml: {e}",
+                        step_idx=8)
                     pause_step()
                     ui.finish(8, utils.StepResult.ABORT)
                 else:
-                    project = data.get("project", {})
+                    project   = data.get("project", {})
                     build_sys = data.get("build-system", {})
                     missing_meta: list[str] = []
                     if not project.get("name"):
@@ -367,7 +408,8 @@ def run_doctor(path: str, out: utils.Output,
                         ui.finish(8, utils.StepResult.OK)
         else:
             warnings += 1
-            add_check("project_metadata", "warn", "skipped (no repository)")
+            add_check("project_metadata", "warn",
+                "skipped (no repository)")
             out.warn("Skipped (no repository)", step_idx=8)
             pause_step()
             ui.finish(8, utils.StepResult.ABORT)
@@ -388,7 +430,8 @@ def run_doctor(path: str, out: utils.Output,
                 ui.finish(9, utils.StepResult.OK)
             else:
                 warnings += 1
-                add_check("test_footprint", "warn", "no tests found")
+                add_check("test_footprint", "warn",
+                    "no tests found")
                 out.warn("No tests directory or test_*.py files found", step_idx=9)
                 pause_step()
                 ui.finish(9, utils.StepResult.ABORT)
@@ -436,8 +479,7 @@ def run_doctor(path: str, out: utils.Output,
     if json_mode:
         out.quiet = original_quiet
         out.raw(json.dumps(report, indent=2))
-    else:
-        out.quiet = original_quiet
+    else: out.quiet = original_quiet
 
     if failures:
         out.warn("doctor summary: " + f"{failures} critical issue(s), {warnings} warning(s)")
@@ -458,8 +500,7 @@ def run_check_only(args: argparse.Namespace,
                    doctor_fn: Callable[..., int] | None = None,
                    repo_finder: Callable[[str], str | None] | None = None) -> int:
     """Run non-mutating workflow preflight checks."""
-    if doctor_fn is None:
-        doctor_fn = run_doctor
+    if doctor_fn is None: doctor_fn = run_doctor
     if repo_finder is None:
         repo_finder = _find_repo_noninteractive
 
@@ -470,12 +511,9 @@ def run_check_only(args: argparse.Namespace,
 
     def note(level: str, check: str, message: str) -> None:
         findings.append({"level": level, "check": check, "message": message})
-        if level == "blocker":
-            emit.warn(message)
-        elif level == "warn":
-            emit.warn(message)
-        else:
-            emit.success(message)
+        if level == "blocker": emit.warn(message)
+        elif level == "warn": emit.warn(message)
+        else: emit.success(message)
 
     emit.info("running check-only preflight")
     report_path: str | None = None
@@ -506,10 +544,8 @@ def run_check_only(args: argparse.Namespace,
             note("blocker", "doctor_report_parse",
                  f"check-only: failed to parse doctor report: {e}")
         finally:
-            try:
-                os.remove(report_path)
-            except OSError:
-                pass
+            try: os.remove(report_path)
+            except OSError: pass
 
     repo = repo_finder(args.path)
     if not repo:

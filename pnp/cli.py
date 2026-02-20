@@ -26,33 +26,31 @@ CLI.
 from __future__ import annotations
 
 # ======================= STANDARDS =======================
+import subprocess
 import argparse
 import shutil
-import subprocess
 import sys
 
 # ======================== LOCALS =========================
+from .ops import run_hook, manage_git_extension_install
+from . import workflow_engine as engine
+from .ops import show_effective_config
 from . import _constants as const
-from . import __version__
 from .help_menu import help_msg
+from . import audit as flow_ops
+from . import __version__
 from . import config
 from . import utils
-from .ops import run_hook, manage_git_extension_install
-from .ops import show_effective_config
-from . import audit as flow_ops
-from . import workflow_engine as engine_mod
 
 DOCTOR_SCHEMA = flow_ops.DOCTOR_SCHEMA
-CHECK_SCHEMA = flow_ops.CHECK_SCHEMA
+CHECK_SCHEMA  = flow_ops.CHECK_SCHEMA
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=help_msg())
-    p.add_argument(
-        "--version",
-        action="version",
-        version=f"pnp {__version__}",
-    )
+    p.add_argument("--version", action="version",
+        version=f"{const.PNP}{__version__}")
+
     p.add_argument("--doctor", action="store_true")
     p.add_argument("--doctor-json", action="store_true")
     p.add_argument("--doctor-report", default=None)
@@ -67,7 +65,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    action="store_true")
     p.add_argument("--sync", "-S", dest="machete_sync",
                    action="store_true")
-    p.add_argument("--traverse", "-t", dest="machete_traverse",
+    p.add_argument("--traverse", "-t",
+                   dest="machete_traverse",
                    action="store_true")
 
     # Global arguments
@@ -110,9 +109,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     """Add and parse arguments."""
-    p = _build_parser()
-    parsed = p.parse_args(argv)
-    return config.apply_layered_config(parsed, argv, p)
+    parser = _build_parser()
+    parsed = parser.parse_args(argv)
+    return config.apply_layered_config(parsed, argv, parser)
 
 
 def _find_repo_noninteractive(path: str) -> str | None:
@@ -124,36 +123,33 @@ def run_doctor(path: str, out: utils.Output,
                json_mode: bool = False,
                report_file: str | None = None) -> int:
     """Compatibility wrapper for extracted doctor implementation."""
-    return flow_ops.run_doctor(
-        path,
-        out,
-        json_mode=json_mode,
-        report_file=report_file,
-        repo_finder=_find_repo_noninteractive,
-    )
+    return flow_ops.run_doctor(path, out,
+           json_mode=json_mode, report_file=report_file,
+           repo_finder=_find_repo_noninteractive)
 
 
 def run_check_only(args: argparse.Namespace,
                    out: utils.Output) -> int:
-    """Compatibility wrapper for extracted check-only implementation."""
-    return flow_ops.run_check_only(
-        args,
-        out,
-        doctor_fn=run_doctor,
-        repo_finder=_find_repo_noninteractive,
-    )
+    """
+    Compatibility wrapper for extracted check-only
+    implementation.
+    """
+    return flow_ops.run_check_only(args, out,
+           doctor_fn=run_doctor,
+           repo_finder=_find_repo_noninteractive)
 
 
 def _run_hook_proxy(cmd: str, cwd: str, dryrun: bool,
                     no_transmission: bool = False) -> int:
     """Bridge for legacy patch points (`pnp.cli.run_hook`)."""
-    return run_hook(cmd, cwd, dryrun, no_transmission=no_transmission)
+    return run_hook(cmd, cwd, dryrun,
+           no_transmission=no_transmission)
 
 
-# Keep workflow engine bound to cli-level patch targets used by tests.
-engine_mod.run_hook = _run_hook_proxy
-
-_WorkflowOrchestrator = engine_mod.Orchestrator
+# Keep workflow engine bound to cli-level patch targets used
+# by tests.
+engine.run_hook       = _run_hook_proxy
+_WorkflowOrchestrator = engine.Orchestrator
 
 
 class Orchestrator(_WorkflowOrchestrator):
@@ -161,9 +157,9 @@ class Orchestrator(_WorkflowOrchestrator):
 
     def __init__(self, argv: list[str] | argparse.Namespace,
                  repo_path: str | None = None):
-        if isinstance(argv, list):
-            argv = parse_args(argv)
+        if isinstance(argv, list): argv = parse_args(argv)
         super().__init__(argv, repo_path=repo_path)
+
 
 def main() -> None:
     """
@@ -195,7 +191,8 @@ def main() -> None:
     code = 0
     try:
         if args.install_git_ext and args.uninstall_git_ext:
-            out.warn("choose only one: --install-git-ext or --uninstall-git-ext")
+            out.warn("choose only one: "
+                "--install-git-ext or --uninstall-git-ext")
             code = 1
             return None
         if args.show_config:
@@ -205,29 +202,24 @@ def main() -> None:
             code = run_check_only(args, out)
             return None
         if args.install_git_ext:
-            code = manage_git_extension_install(out, uninstall=False,
-                                                target_dir=args.git_ext_dir)
+            code = manage_git_extension_install(out,
+                   uninstall=False,
+                   target_dir=args.git_ext_dir)
             return None
         if args.uninstall_git_ext:
-            code = manage_git_extension_install(out, uninstall=True,
-                                                target_dir=args.git_ext_dir)
+            code = manage_git_extension_install(out,
+                   uninstall=True,
+                   target_dir=args.git_ext_dir)
             return None
         if args.doctor:
-            code = run_doctor(
-                args.path,
-                out,
-                json_mode=args.doctor_json,
-                report_file=args.doctor_report,
-            )
+            code = run_doctor(args.path, out,
+                   json_mode=args.doctor_json,
+                   report_file=args.doctor_report)
             return None
         if args.batch_commit:
-            paths = utils.find_repo(
-                args.path,
-                batch=True,
-                return_none=False,
-            )
-        else:
-            paths = [None]
+            paths = utils.find_repo(args.path, batch=True,
+                    return_none=False)
+        else: paths = [None]
         for path in paths:
             orchestrator = Orchestrator(args, path)
             orchestrator.orchestrate()

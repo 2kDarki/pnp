@@ -2,29 +2,28 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
 from typing import Callable
-import argparse
-import json
-import os
-import shutil
+from pathlib import Path
 import subprocess
-import sys
 import tempfile
+import argparse
+import shutil
+import json
 import time
+import sys
+import os
 
-try:
-    import tomllib
+try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
 from . import _constants as const
-from . import utils
 from .cli_helpers import run_hook
 from .tui import tui_runner
+from . import utils
 
 DOCTOR_SCHEMA = "pnp.doctor.v1"
-CHECK_SCHEMA = "pnp.check.v1"
+CHECK_SCHEMA  = "pnp.check.v1"
 
 
 def _find_repo_noninteractive(path: str) -> str | None:
@@ -34,13 +33,11 @@ def _find_repo_noninteractive(path: str) -> str | None:
         if os.path.isdir(os.path.join(cur, ".git")):
             return cur
         parent = os.path.dirname(cur)
-        if parent == cur:
-            break
+        if parent == cur: break
         cur = parent
 
     base = os.path.abspath(path)
-    if not os.path.isdir(base):
-        return None
+    if not os.path.isdir(base): return None
     for child in os.listdir(base):
         cand = os.path.join(base, child)
         if os.path.isdir(os.path.join(cand, ".git")):
@@ -51,13 +48,13 @@ def _find_repo_noninteractive(path: str) -> str | None:
 def run_doctor(path: str, out: utils.Output,
                json_mode: bool = False,
                report_file: str | None = None,
-               repo_finder: Callable[[str], str | None] | None = None) -> int:
+               repo_finder: Callable[[str], str | None] |
+                            None = None) -> int:
     """Run local environment audit checks."""
     if repo_finder is None:
         repo_finder = _find_repo_noninteractive
     original_quiet = out.quiet
-    if json_mode:
-        out.quiet = True
+    if json_mode: out.quiet = True
     failures = 0
     warnings = 0
     checks: list[dict[str, str]] = []
@@ -78,8 +75,7 @@ def run_doctor(path: str, out: utils.Output,
     use_ui = bool(const.CI_MODE and not const.PLAIN and sys.stdout.isatty())
 
     def pause_step() -> None:
-        if use_ui:
-            time.sleep(step_delay)
+        if use_ui: time.sleep(step_delay)
 
     def add_check(name: str, status: str, details: str) -> None:
         checks.append({"name": name, "status": status, "details": details})
@@ -93,17 +89,17 @@ def run_doctor(path: str, out: utils.Output,
         )
 
     with tui_runner(labels, enabled=use_ui) as ui:
-        if use_ui:
-            utils.bind_console(ui)
+        if use_ui: utils.bind_console(ui)
 
         ui.start(0)
-        py_ver = sys.version.split()[0]
-        py_ok = sys.version_info >= (3, 10)
+        py_ver    = sys.version.split()[0]
+        py_ok     = sys.version_info >= (3, 10)
         py_detail = f"{py_ver} (>=3.10 required)"
         if py_ok:
             add_check("python", "ok", py_detail)
             out.success(f"Python: {py_detail}", step_idx=0)
-            out.info(f"Executable: {sys.executable}", step_idx=0)
+            out.info(f"Executable: {sys.executable}",
+                step_idx=0)
             pause_step()
             ui.finish(0, utils.StepResult.OK)
         else:
@@ -115,7 +111,7 @@ def run_doctor(path: str, out: utils.Output,
 
         ui.start(1)
         git_bin = shutil.which("git")
-        git_ok = False
+        git_ok  = False
         if not git_bin:
             failures += 1
             add_check("git", "fail", "not found in PATH")
@@ -341,8 +337,8 @@ def run_doctor(path: str, out: utils.Output,
         ui.start(8)
         pkg_root: str | None = repo
         if repo:
-            detected = utils.detect_subpackage(path, repo)
-            pkg_root = detected or repo
+            detected  = utils.detect_subpackage(path, repo)
+            pkg_root  = detected or repo
             pyproject = Path(pkg_root) / "pyproject.toml"
             if not pyproject.exists():
                 warnings += 1
@@ -452,8 +448,7 @@ def run_doctor(path: str, out: utils.Output,
     if json_mode:
         out.quiet = original_quiet
         out.raw(json.dumps(report, indent=2))
-    else:
-        out.quiet = original_quiet
+    else: out.quiet = original_quiet
 
     if failures:
         out.warn("doctor summary: " + f"{failures} critical issue(s), {warnings} warning(s)")
@@ -474,24 +469,20 @@ def run_check_only(args: argparse.Namespace,
                    doctor_fn: Callable[..., int] | None = None,
                    repo_finder: Callable[[str], str | None] | None = None) -> int:
     """Run non-mutating workflow preflight checks."""
-    if doctor_fn is None:
-        doctor_fn = run_doctor
+    if doctor_fn is None: doctor_fn = run_doctor
     if repo_finder is None:
         repo_finder = _find_repo_noninteractive
 
-    blockers = 0
+    blockers      = 0
     warnings_only = 0
     findings: list[dict[str, str]] = []
     emit = out if not args.check_json else utils.Output(quiet=True)
 
     def note(level: str, check: str, message: str) -> None:
         findings.append({"level": level, "check": check, "message": message})
-        if level == "blocker":
-            emit.warn(message)
-        elif level == "warn":
-            emit.warn(message)
-        else:
-            emit.success(message)
+        if level == "blocker": emit.warn(message)
+        elif level == "warn": emit.warn(message)
+        else: emit.success(message)
 
     emit.info("running check-only preflight")
     report_path: str | None = None
@@ -522,10 +513,8 @@ def run_check_only(args: argparse.Namespace,
             note("blocker", "doctor_report_parse",
                  f"check-only: failed to parse doctor report: {e}")
         finally:
-            try:
-                os.remove(report_path)
-            except OSError:
-                pass
+            try: os.remove(report_path)
+            except OSError: pass
 
     repo = repo_finder(args.path)
     if not repo:

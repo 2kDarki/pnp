@@ -15,8 +15,7 @@ from pathlib import Path
 import subprocess
 import os
 
-try:
-    import tomllib
+try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
@@ -70,18 +69,14 @@ SPECS: tuple[OptionSpec, ...] = (
 
 def _parse_bool(raw: str) -> bool | None:
     value = raw.strip().lower()
-    if value in {"1", "true", "yes", "on"}:
-        return True
-    if value in {"0", "false", "no", "off"}:
-        return False
+    if value in {"1", "true", "yes", "on"}: return True
+    if value in {"0", "false", "no", "off"}: return False
     return None
 
 
 def _parse_bool_like(raw: object) -> bool | None:
-    if isinstance(raw, bool):
-        return raw
-    if isinstance(raw, str):
-        return _parse_bool(raw)
+    if isinstance(raw, bool): return raw
+    if isinstance(raw, str): return _parse_bool(raw)
     return None
 
 
@@ -91,8 +86,7 @@ def _repo_root(path: str) -> str | None:
         if os.path.isdir(os.path.join(cur, ".git")):
             return cur
         parent = os.path.dirname(cur)
-        if parent == cur:
-            return None
+        if parent == cur: return None
         cur = parent
 
 
@@ -100,10 +94,8 @@ def _resolve_scan_root(path: str) -> Path:
     target = Path(path).expanduser()
     if not target.is_absolute():
         target = (Path.cwd() / target).resolve()
-    else:
-        target = target.resolve()
-    if target.is_file():
-        return target.parent
+    else: target = target.resolve()
+    if target.is_file(): return target.parent
     return target
 
 
@@ -111,10 +103,8 @@ def _find_pyproject(path: str) -> Path | None:
     cur = _resolve_scan_root(path)
     while True:
         candidate = cur / "pyproject.toml"
-        if candidate.is_file():
-            return candidate
-        if cur.parent == cur:
-            return None
+        if candidate.is_file(): return candidate
+        if cur.parent == cur: return None
         cur = cur.parent
 
 
@@ -129,12 +119,11 @@ def _diag(level: str, source: str, key: str, raw: object,
     }
 
 
-def _load_pyproject_overrides(path: str) -> tuple[dict[str, object],
-                                                   list[dict[str, str]],
-                                                   str | None]:
+def _load_pyproject_overrides(path: str
+    ) -> tuple[dict[str, object], list[dict[str, str]], str
+       | None]:
     pyproject = _find_pyproject(path)
-    if pyproject is None:
-        return {}, [], None
+    if pyproject is None: return {}, [], None
     try:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
@@ -142,8 +131,7 @@ def _load_pyproject_overrides(path: str) -> tuple[dict[str, object],
         return {}, [_diag("error", "pyproject", "tool.pnp", "", msg)], str(pyproject)
 
     table = data.get("tool", {}).get("pnp")
-    if table is None:
-        return {}, [], str(pyproject)
+    if table is None: return {}, [], str(pyproject)
     if not isinstance(table, dict):
         msg = "tool.pnp must be a TOML table, e.g. [tool.pnp]"
         return {}, [_diag("error", "pyproject", "tool.pnp", type(table).__name__, msg)], str(pyproject)
@@ -164,19 +152,16 @@ def _load_pyproject_overrides(path: str) -> tuple[dict[str, object],
 
 def _read_git_scope(scope_args: list[str], repo: str | None = None) -> dict[str, str]:
     cmd = ["git"]
-    if repo:
-        cmd += ["-C", repo]
+    if repo: cmd += ["-C", repo]
     cmd += ["config", *scope_args, "--get-regexp", r"^pnp\."]
     try:
         cp = subprocess.run(cmd, check=False, capture_output=True, text=True)
-    except FileNotFoundError:
-        return {}
-    if cp.returncode != 0:
-        return {}
+    except FileNotFoundError: return {}
+
+    if cp.returncode != 0: return {}
     out: dict[str, str] = {}
     for line in cp.stdout.splitlines():
-        if not line.strip():
-            continue
+        if not line.strip(): continue
         key, _, value = line.partition(" ")
         out[key.strip()] = value.strip()
     return out
@@ -184,14 +169,13 @@ def _read_git_scope(scope_args: list[str], repo: str | None = None) -> dict[str,
 
 def _load_git_overrides(path: str) -> dict[str, str]:
     values = _read_git_scope(["--global"])
-    repo = _repo_root(path)
+    repo   = _repo_root(path)
     if repo:
         values.update(_read_git_scope(["--local"], repo=repo))
     mapped: dict[str, str] = {}
     for spec in SPECS:
         key = f"pnp.{spec.git_key}"
-        if key in values:
-            mapped[spec.dest] = values[key]
+        if key in values: mapped[spec.dest] = values[key]
     return mapped
 
 
@@ -199,8 +183,7 @@ def _load_env_overrides() -> dict[str, str]:
     out: dict[str, str] = {}
     for spec in SPECS:
         raw = os.environ.get(spec.env_key)
-        if raw is not None:
-            out[spec.dest] = raw
+        if raw is not None: out[spec.dest] = raw
     return out
 
 
@@ -235,16 +218,11 @@ def _explicit_cli_dests(argv: list[str], parser: ArgumentParser) -> set[str]:
     i = 0
     while i < len(argv):
         token = argv[i]
-        if token == "--":
-            break
-        if not token.startswith("-"):
-            i += 1
-            continue
-        opt = token.split("=", 1)[0]
+        if token == "--": break
+        if not token.startswith("-"): i += 1; continue
+        opt    = token.split("=", 1)[0]
         action = mapping.get(opt)
-        if action is None:
-            i += 1
-            continue
+        if action is None: i += 1; continue
         explicit.add(action.dest)
         takes_value = action.nargs not in (0, None) or action.option_strings and action.default is not False
         if "=" not in token and takes_value and i + 1 < len(argv):
@@ -265,14 +243,11 @@ def apply_layered_config(args: Namespace, argv: list[str], parser: ArgumentParse
     sources: dict[str, str] = {}
     diagnostics: list[dict[str, str]] = list(py_diags)
 
-    for k in vars(merged):
-        sources[k] = "default"
-    for dest in explicit:
-        sources[dest] = "cli"
+    for k in vars(merged): sources[k] = "default"
+    for dest in explicit: sources[dest] = "cli"
 
     for spec in SPECS:
-        if spec.dest in explicit:
-            continue
+        if spec.dest in explicit: continue
         if spec.dest in py_vals:
             value = _coerce(spec.dest, py_vals[spec.dest], "pyproject", diagnostics)
             if value is not None:

@@ -5,16 +5,17 @@ from datetime import datetime
 from typing import Any, cast
 from pathlib import Path
 import argparse
-import os
 import sys
+import os
 
 from tuikit.textools import strip_ansi
 
 from . import _constants as const
+from .tui import tui_runner
+from .ops import run_hook
 from . import utils
 from . import ops
-from .ops import run_hook
-from .tui import tui_runner
+
 
 class Orchestrator:
     """
@@ -50,18 +51,20 @@ class Orchestrator:
         """
         self.args: argparse.Namespace = argv
         const.sync_runtime_flags(self.args)
-        self.path       = os.path.abspath(repo_path
-                       or self.args.path)
-        self.out        = utils.Output(quiet=self.args.quiet)
-        self.repo: str | None = None
-        self.subpkg: str | None = None
-        self.gitutils: Any = None
-        self.resolver: Any = None
-        self.latest: str | None = None
+
+        self.path = os.path.abspath(repo_path
+                 or self.args.path)
+        self.out  = utils.Output(quiet=self.args.quiet)
+
+        self.repo:       str | None = None
+        self.subpkg:     str | None = None
+        self.gitutils:          Any = None
+        self.resolver:          Any = None
+        self.latest:     str | None = None
         self.commit_msg: str | None = None
-        self.tag: str | None = None
-        self.log_dir: Path | None = None
-        self.log_text: str | None = None
+        self.tag:        str | None = None
+        self.log_dir:   Path | None = None
+        self.log_text:   str | None = None
         self._temp_message_files: list[str] = []
 
     # ---------- Internal Utilities ----------
@@ -74,18 +77,16 @@ class Orchestrator:
 
     def _resolve_editor_command(self) -> list[str]:
         preferred = getattr(self.args, "editor", None)
-        return ops.resolve_editor_command(preferred, repo=self.repo)
+        return ops.resolve_editor_command(preferred,
+               repo=self.repo)
 
-    def _edit_message_in_editor(self, initial: str, kind: str,
-                                step_idx: int | None = None) -> str:
-        editor = self._resolve_editor_command()
-        text, path = ops.edit_message_in_editor(
-            initial,
-            kind,
-            editor,
-            self.out,
-            step_idx=step_idx,
-        )
+    def _edit_message_in_editor(self, initial: str,
+                                kind: str,
+                                step_idx: int | None = None
+                               ) -> str:
+        editor     = self._resolve_editor_command()
+        text, path = ops.edit_message_in_editor(initial,
+                     kind, editor, self.out, step_idx)
         self._temp_message_files.append(path)
         return text
 
@@ -93,12 +94,14 @@ class Orchestrator:
         return ops.git_head(path)
 
     def _rollback_unstage(self, path: str,
-                          step_idx: int | None = None) -> None:
-        ops.rollback_unstage(path, self.out, step_idx=step_idx)
+                          step_idx: int | None = None
+                         ) -> None:
+        ops.rollback_unstage(path, self.out, step_idx)
 
     def _rollback_delete_tag(self, repo: str, tag: str,
-                             step_idx: int | None = None) -> None:
-        ops.rollback_delete_tag(repo, tag, self.out, step_idx=step_idx)
+                             step_idx: int | None = None
+                            ) -> None:
+        ops.rollback_delete_tag(repo, tag, self.out, step_idx)
 
     # ---------- Workflow Plan ----------
     def _workflow_plan(self) -> tuple[list[Any], list[str]]:
@@ -148,7 +151,7 @@ class Orchestrator:
         steps, labels = self._workflow_plan()
 
         use_ui = bool(const.CI_MODE and not const.PLAIN
-            and sys.stdout.isatty())
+             and sys.stdout.isatty())
 
         with tui_runner(labels, enabled=use_ui) as ui:
             try:
@@ -160,12 +163,13 @@ class Orchestrator:
                     ui.finish(i, result)
                     if result is utils.StepResult.DONE: return None
                     if result is utils.StepResult.SKIP: continue
-                    if result is utils.StepResult.FAIL: sys.exit(1)
+                    if result is utils.StepResult.FAIL:
+                        sys.exit(1)
                     if result is utils.StepResult.ABORT:
-                        if isinstance(msg, tuple): self.out.abort(*msg)
+                        if isinstance(msg, tuple):
+                            self.out.abort(*msg)
                         else: self.out.abort(msg)
-            finally:
-                self._cleanup_temp_message_files()
+            finally: self._cleanup_temp_message_files()
 
         if self.args.dry_run:
             self.out.success(const.DRYRUN + "no changes made")
@@ -268,12 +272,8 @@ class Orchestrator:
             .to_list(hooks), step_idx=step_idx)
         for i, cmd in enumerate(hooks):
             try:
-                run_hook(
-                    cmd,
-                    self.subpkg,
-                    self.args.dry_run,
-                    no_transmission=self.args.no_transmission,
-                )
+                run_hook(cmd, self.subpkg, self.args.dry_run,
+                    self.args.no_transmission)
             except (RuntimeError, ValueError) as e:
                 msg = " ".join(e.args[0].split())
                 if isinstance(e, RuntimeError):
@@ -299,18 +299,13 @@ class Orchestrator:
             self.args.machete_sync,
             self.args.machete_traverse,
         ))
-        if not enabled:
-            return None, utils.StepResult.SKIP
+        if not enabled: return None, utils.StepResult.SKIP
         assert self.repo is not None
 
-        return ops.run_machete(
-            repo=self.repo,
-            dry_run=self.args.dry_run,
-            machete_sync=self.args.machete_sync,
-            machete_traverse=self.args.machete_traverse,
-            out=self.out,
-            step_idx=step_idx,
-        )
+        return ops.run_machete(self.repo, self.args.dry_run,
+               self.args.machete_sync,
+               self.args.machete_traverse, self.out,
+               step_idx)
 
     # ---------- Step: Changelog ----------
     def gen_changelog(self, get: bool = False) -> None\
@@ -353,8 +348,7 @@ class Orchestrator:
             log_name = self.args.changelog_file
             if os.sep not in log_name:
                 log_file = self.log_dir / Path(log_name)
-            else:
-                log_file = Path(log_name)
+            else: log_file = Path(log_name)
 
         if get: return log_file
 
@@ -415,8 +409,9 @@ class Orchestrator:
         """
         assert self.subpkg is not None
         if not self.gitutils.has_uncommitted(self.subpkg):
-            log_file      = self.gen_changelog(get=True)
+            log_file = self.gen_changelog(get=True)
             assert isinstance(log_file, Path)
+
             self.log_text = utils\
                 .retrieve_latest_changelog(log_file)
             self.out.success("no changes to commit", step_idx)
@@ -427,28 +422,28 @@ class Orchestrator:
                    + "found. Stage and commit? [y/n]")
             if utils.intent(prompt, "n", "return"):
                 return None, utils.StepResult.ABORT
+
         head_before = self._git_head(self.subpkg)
-        staged = False
+        staged      = False
         try:
             msg = self.args.tag_message\
                or utils.gen_commit_message(self.subpkg)
 
-            edit_message = bool(getattr(self.args, "edit_message", False))
+            edit_message = bool(getattr(self.args,
+                           "edit_message", False))
             can_open_editor = not any((
-                bool(getattr(self.args, "ci", False)),
+                bool(getattr(self.args,    "ci", False)),
                 bool(getattr(self.args, "quiet", False)),
                 bool(getattr(self.args, "plain", False)),
             ))
             if edit_message and can_open_editor:
-                msg = self._edit_message_in_editor(
-                    msg,
-                    "commit",
-                    step_idx=step_idx,
-                )
+                msg = self._edit_message_in_editor(msg,
+                      "commit", step_idx)
             elif not const.CI_MODE:
                 if edit_message and not can_open_editor:
-                    self.out.warn("edit-message skipped in ci/quiet/plain mode",
-                                  step_idx=step_idx)
+                    self.out.warn("edit-message skipped in "
+                        "ci/quiet/plain mode",
+                        step_idx=step_idx)
                 m = "enter commit message. Type 'no' to " \
                   + "exclude commit message"
                 self.out.prompt(m)
@@ -470,7 +465,9 @@ class Orchestrator:
             if staged and not self.args.dry_run:
                 head_after = self._git_head(self.subpkg)
                 if head_before and head_after == head_before:
-                    self._rollback_unstage(self.subpkg, step_idx=step_idx)
+                    self._rollback_unstage(self.subpkg,
+                        step_idx=step_idx)
+
             e = self.resolver.normalize_stderr(e)
             return (f"{e}\n", False), utils.StepResult.ABORT
 
@@ -513,8 +510,8 @@ class Orchestrator:
                 False, step_idx=step_idx)
             if const.CI_MODE and not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(const.DRYRUN + "continuing regardless",
-                step_idx=step_idx)
+            self.out.prompt(const.DRYRUN +
+                "continuing regardless", step_idx=step_idx)
 
         branchless = False
         branch     = self.gitutils.current_branch(self.subpkg)
@@ -523,16 +520,15 @@ class Orchestrator:
                 step_idx=step_idx)
             if not self.args.dry_run:
                 return None, utils.StepResult.ABORT
-            self.out.prompt(const.DRYRUN + "continuing regardless",
-                step_idx=step_idx)
+            self.out.prompt(const.DRYRUN +
+                "continuing regardless", step_idx=step_idx)
             branchless = True
 
         if not branchless:
             upstream = self.args.remote or self.gitutils\
                        .upstream_for_branch(self.subpkg,
                        branch)
-            if upstream:
-                remote_name = upstream.split("/")[0]
+            if upstream: remote_name = upstream.split("/")[0]
             else: remote_name = self.args.remote or "origin"
         else: upstream = None
 
@@ -562,8 +558,8 @@ class Orchestrator:
                     force=force,
                     push_tags=False)
             except Exception as e:
-                return (self.resolver.normalize_stderr(e), False), \
-                    utils.StepResult.ABORT
+                return (self.resolver.normalize_stderr(e),
+                       False), utils.StepResult.ABORT
 
         return None, utils.StepResult.OK
 
@@ -605,10 +601,11 @@ class Orchestrator:
             self.out.prompt(msg, step_idx=step_idx)
         else:
             assert self.repo is not None
-            existing = self.gitutils.tags_sorted(self.repo, self.tag)
+            existing    = self.gitutils.tags_sorted(
+                          self.repo, self.tag)
             tag_created = False
-            try: self.gitutils.create_tag(self.repo, self.tag,
-                 message=self.args.tag_message
+            try: self.gitutils.create_tag(self.repo,
+                 self.tag, message=self.args.tag_message
                  or self.log_text, sign=self.args.tag_sign)
             except Exception as e:
                 if self.tag in existing:
@@ -617,8 +614,7 @@ class Orchestrator:
                 else:
                     return f"tag creation failed: {e}", \
                            utils.StepResult.ABORT
-            else:
-                tag_created = True
+            else: tag_created = True
 
             try: self.gitutils.push(self.repo,
                  remote=self.args.remote or "origin",
@@ -626,8 +622,8 @@ class Orchestrator:
                  push_tags=True)
             except Exception as e:
                 if tag_created:
-                    self._rollback_delete_tag(self.repo, self.tag,
-                                              step_idx=step_idx)
+                    self._rollback_delete_tag(self.repo,
+                        self.tag, step_idx=step_idx)
                 e = self.resolver.normalize_stderr(e,
                     "failed to push tags:")
                 return (e, False), utils.StepResult.ABORT
@@ -672,16 +668,15 @@ class Orchestrator:
             if tags:
                 self.tag = tags[0]
                 self.out.warn(
-                    "no publish step detected; using latest tag "
-                    + f"{self.tag!r} for release",
+                    "no publish step detected; using latest"
+                    f"tag {self.tag!r} for release",
                     step_idx=step_idx,
                 )
             elif not self.args.dry_run:
                 self.out.warn("cannot create GitHub release: no tag available",
                     step_idx=step_idx)
                 return None, utils.StepResult.FAIL
-            else:
-                self.tag = "v0.0.0-dry-run"
+            else: self.tag = "v0.0.0-dry-run"
 
         token = self.args.gh_token \
              or os.environ.get("GITHUB_TOKEN")
@@ -701,8 +696,8 @@ class Orchestrator:
         self.out.success(f"creating GitHub release for tag {self.tag}", step_idx)
 
         if self.args.dry_run:
-            self.out.prompt(const.DRYRUN + "skipping process...",
-                step_idx=step_idx)
+            self.out.prompt(const.DRYRUN +
+                "skipping process...", step_idx=step_idx)
         else:
             assert token is not None and self.tag is not None
             release_info = gh.create_release(token,
@@ -718,13 +713,15 @@ class Orchestrator:
                 self.out.success(f"uploading asset: {fpath}",
                     step_idx=step_idx)
                 if self.args.dry_run:
-                    self.out.prompt(const.DRYRUN + "skipping process...",
+                    self.out.prompt(const.DRYRUN +
+                        "skipping process...",
                         step_idx=step_idx)
                 else:
                     assert token is not None
                     try: gh.upload_asset(token,
                          self.args.gh_repo,
-                         int(cast(int, release_info["id"])), fpath)
+                         int(cast(int, release_info["id"])),
+                         fpath)
                     except RuntimeError as e:
                         e = self.resolver.normalize_stderr(e)
                         return (e, False), \

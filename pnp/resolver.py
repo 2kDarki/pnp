@@ -11,8 +11,8 @@ Design goals:
 """
 # ======================= STANDARDS =======================
 from subprocess import CompletedProcess, run
-from typing import Callable, Iterable
 from dataclasses import dataclass, asdict
+from typing import Callable, Iterable
 from pathlib import Path
 import logging as log
 import getpass
@@ -32,9 +32,9 @@ from . import _constants as const
 logger = log.getLogger("pnp.resolver")
 logger.setLevel(log.DEBUG)
 
-SEV_INFO = "info"
-SEV_WARN = "warn"
-SEV_ERROR = "error"
+SEV_INFO     = "info"
+SEV_WARN     = "warn"
+SEV_ERROR    = "error"
 SEV_CRITICAL = "critical"
 
 
@@ -44,19 +44,17 @@ class ErrorClassification:
     severity: str
     handler: str
 
-    def as_dict(self) -> dict[str, str]:
-        return asdict(self)
+    def as_dict(self) -> dict[str, str]: return asdict(self)
 
 
 def configure_logger(log_dir: Path) -> None:
     """Configure resolver logger once per process."""
-    if logger.handlers:
-        return
+    if logger.handlers: return
     os.makedirs(log_dir, exist_ok=True)
-    pnp_errors = log_dir / "debug.log"
+    pnp_errors   = log_dir / "debug.log"
     file_handler = log.FileHandler(str(pnp_errors))
-    fmt = log.Formatter("GitError: %(asctime)s - %"
-        + "(levelname)s - %(message)s")
+    fmt          = log.Formatter("GitError: %(asctime)s - %"
+                 + "(levelname)s - %(message)s")
     file_handler.setFormatter(fmt)
     logger.addHandler(file_handler)
 
@@ -64,7 +62,9 @@ def configure_logger(log_dir: Path) -> None:
 def _run(cmd: list[str], cwd: str, check: bool = False,
          capture: bool = True, text: bool = True
          ) -> CompletedProcess:
-    """Wrapper around subprocess.run with consistent kwargs"""
+    """
+    Wrapper around subprocess.run with consistent kwargs.
+    """
     logger.debug("RUN: %s (cwd=%s)", " ".join(cmd), cwd)
     try:
         cp = run(cmd, cwd=cwd, check=check,
@@ -84,10 +84,15 @@ def _timestamped_backup_name(base: Path) -> Path:
 
 
 def _safe_copytree(src: Path, dst: Path,
-                   ignore: Callable[[str, list[str]], Iterable[str]]
-                   | Callable[[str | os.PathLike[str], list[str]],
-                              Iterable[str]] | None = None) -> None:
-    """Copy tree with dirs_exist_ok semantics and safe error messages"""
+                   ignore: Callable[[str, list[str]],
+                           Iterable[str]] | Callable[[str |
+                           os.PathLike[str], list[str]],
+                           Iterable[str]] | None = None
+                           ) -> None:
+    """
+    Copy tree with dirs_exist_ok semantics and safe error
+    messages.
+    """
     try: shutil.copytree(src, dst, dirs_exist_ok=True,
          ignore=ignore)
     except Exception:
@@ -97,7 +102,7 @@ def _safe_copytree(src: Path, dst: Path,
 
 class Handlers:
     """
-    Instance with callable interface
+    Instance with callable interface.
     Returns status codes or raises to signal fatal conditions
 
     API notes:

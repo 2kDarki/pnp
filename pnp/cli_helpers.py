@@ -25,13 +25,11 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     capture = not no_transmission \
           and not utils.any_in(exclude, eq=cmd)
 
-    parts = cmd.split("::")
+    parts  = cmd.split("::")
     prefix = "run"
-    if len(parts) == 2:
-        prefix, cmd = parts
+    if len(parts) == 2: prefix, cmd = parts
     args = cmd.split()
-    if not args:
-        raise ValueError("hook command is empty")
+    if not args: raise ValueError("hook command is empty")
 
     disallowed = {
         "rm", "mv", "dd", "shutdown", "reboot", "mkfs",
@@ -44,21 +42,18 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
         raise ValueError(err)
 
     add = f" {const.DRYRUN}skips" if dryrun else ""
-    m = utils.wrap(f"[{prefix}] {cmd}{add}")
+    m   = utils.wrap(f"[{prefix}] {cmd}{add}")
     utils.transmit(m, fg=const.GOOD)
-    if dryrun:
-        return 0
+    if dryrun: return 0
 
-    if "pytest" in cmd:
-        print()
+    if "pytest" in cmd: print()
 
-    proc = subprocess.run(cmd, cwd=cwd, shell=True,
+    proc   = subprocess.run(cmd, cwd=cwd, shell=True,
              check=False, text=True, capture_output=capture)
-    code = proc.returncode
+    code   = proc.returncode
     stdout = proc.stdout
     stderr = proc.stderr
-    if not capture or stderr:
-        print()
+    if not capture or stderr: print()
     if code != 0:
         err = f"[{code}]: {cmd} {stderr}"
         raise RuntimeError(err)
@@ -79,19 +74,16 @@ def manage_git_extension_install(out: utils.Output,
         raw_path = os.environ.get("PATH", "")
         norm_target = os.path.normcase(str(dir_path.resolve()))
         for segment in raw_path.split(os.pathsep):
-            if not segment.strip():
-                continue
+            if not segment.strip(): continue
             try:
                 norm_segment = os.path.normcase(str(Path(segment).expanduser().resolve()))
-            except OSError:
-                continue
-            if norm_segment == norm_target:
-                return True
+            except OSError: continue
+            if norm_segment == norm_target: return True
         return False
 
     home = Path.home()
-    bin_dir = Path(target_dir).expanduser() if target_dir else \
-        (home / ".local" / "bin")
+    bin_dir = Path(target_dir).expanduser() if target_dir \
+              else (home / ".local" / "bin")
 
     def shim_specs() -> list[tuple[Path, str, int | None]]:
         if os.name == "nt":

@@ -1,8 +1,8 @@
 """Module to keep communication with externals isolated."""
 # ======================= STANDARDS ========================
 from enum import Enum, auto as auto_enum
-from dataclasses import dataclass
 from typing import NoReturn, Protocol
+from dataclasses import dataclass
 from types import ModuleType
 from pathlib import Path
 import subprocess
@@ -18,13 +18,14 @@ from tuikit.logictools import any_in
 from tuikit.textools import Align
 
 # ======================== LOCALS ==========================
-from ._constants import *
 from . import _constants as const
+from ._constants import *
 
 
 class MessageSink(Protocol):
     def add_message(self, idx: int | None, msg: str,
-                    fg: str = PROMPT, prfx: bool = True) -> None: ...
+                    fg: str = PROMPT, prfx: bool = True
+                   ) -> None: ...
 
 
 _active_console: MessageSink | None = None
@@ -41,28 +42,22 @@ def suspend_console() -> None:
     global _active_console
     current = _active_console
     _console_stack.append(current)
-    if current is None:
-        return
+    if current is None: return
     suspend = getattr(current, "suspend", None)
-    if callable(suspend):
-        suspend()
-    else:
-        bind_console(None)
+    if callable(suspend): suspend()
+    else: bind_console(None)
 
 
 def resume_console() -> None:
     """Restore previously suspended sink."""
-    if not _console_stack:
-        return
+    if not _console_stack: return
+
     previous = _console_stack.pop()
-    if previous is None:
-        bind_console(None)
-        return
+    if previous is None: bind_console(None); return
+
     resume = getattr(previous, "resume", None)
-    if callable(resume):
-        resume()
-    else:
-        bind_console(previous)
+    if callable(resume): resume()
+    else: bind_console(previous)
 
 
 def find_repo(path: str, batch: bool = False,
@@ -83,9 +78,7 @@ def find_repo(path: str, batch: bool = False,
     cur = os.path.abspath(path)
     while True:
         if os.path.isdir(os.path.join(cur, '.git')):
-            if batch:
-                curs.append(cur)
-                break
+            if batch: curs.append(cur); break
             if const.CI_MODE: return cur
             if intent(found(cur), "y", "return"): return cur
         parent = os.path.dirname(cur)
@@ -138,6 +131,7 @@ def import_deps(log_dir: Path) -> tuple[ModuleType, ModuleType]:
     """
     from . import resolver
     from . import gitutils
+
     resolver.configure_logger(log_dir)
     return gitutils, resolver
 
