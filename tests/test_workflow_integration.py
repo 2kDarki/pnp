@@ -1,14 +1,14 @@
 """Integration scenarios for end-to-end workflow reliability."""
-from __future__ import annotations
+
 
 from contextlib import redirect_stdout
 from argparse import Namespace
-from pathlib import Path
+
 from io import StringIO
 import unittest
 
+from pnp.workflow_engine import Orchestrator
 from tests._gitfixture import GitFixture
-from pnp.cli import Orchestrator
 from pnp import utils, gitutils
 
 

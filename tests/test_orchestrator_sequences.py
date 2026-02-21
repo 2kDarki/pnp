@@ -1,10 +1,10 @@
 """Sequence tests for orchestrator non-happy control-flow chains."""
-from __future__ import annotations
+
 
 from argparse import Namespace
 import unittest
 
-from pnp.cli import Orchestrator
+from pnp.workflow_engine import Orchestrator
 from pnp import utils
 
 

@@ -1,5 +1,5 @@
 """Regression tests for core pnp hardening fixes."""
-from __future__ import annotations
+
 
 from contextlib import redirect_stdout
 from unittest.mock import patch
@@ -12,9 +12,10 @@ import unittest
 import json
 import sys
 
+from pnp.workflow_engine import Orchestrator
 from pnp import _constants as const
+from pnp.ops import run_hook
 from pnp import utils
-from pnp.cli import Orchestrator, run_hook
 
 
 def make_args(**overrides) -> Namespace:
@@ -153,7 +154,7 @@ class Phase1RegressionTests(unittest.TestCase):
     def test_run_machete_fails_when_binary_missing(self) -> None:
         o = Orchestrator(make_args(machete_status=True), repo_path=".")
         o.repo = "."
-        with patch("pnp.cli.shutil.which", return_value=None):
+        with patch("pnp.ops.shutil.which", return_value=None):
             with redirect_stdout(StringIO()):
                 msg, result = o.run_machete()
         self.assertIs(result, utils.StepResult.ABORT)
@@ -168,15 +169,15 @@ class Phase1RegressionTests(unittest.TestCase):
             stdout="ok",
             stderr="",
         )
-        with patch("pnp.cli.shutil.which", return_value="/usr/bin/git-machete"):
-            with patch("pnp.cli.subprocess.run", return_value=cp) as run:
+        with patch("pnp.ops.shutil.which", return_value="/usr/bin/git-machete"):
+            with patch("pnp.ops.subprocess.run", return_value=cp) as run:
                 with redirect_stdout(StringIO()):
                     _, result = o.run_machete()
         self.assertIs(result, utils.StepResult.OK)
         run.assert_called()
 
     def test_check_only_strict_escalates_doctor_warnings(self) -> None:
-        from pnp.cli import run_check_only
+        from pnp.audit import run_check_only
 
         def fake_doctor(path: str, out: utils.Output, json_mode: bool = False,
                         report_file: str | None = None) -> int:
@@ -189,14 +190,14 @@ class Phase1RegressionTests(unittest.TestCase):
             return 0
 
         args = make_args(check_only=True, strict=True, push=False, publish=False)
-        with patch("pnp.cli.run_doctor", side_effect=fake_doctor):
-            with patch("pnp.cli._find_repo_noninteractive", return_value="."):
+        with patch("pnp.audit.run_doctor", side_effect=fake_doctor):
+            with patch("pnp.audit._find_repo_noninteractive", return_value="."):
                 with redirect_stdout(StringIO()):
                     code = run_check_only(args, utils.Output(quiet=False))
         self.assertEqual(code, 20)
 
     def test_check_only_warnings_only_returns_warning_exit_code(self) -> None:
-        from pnp.cli import run_check_only
+        from pnp.audit import run_check_only
 
         def fake_doctor(path: str, out: utils.Output, json_mode: bool = False,
                         report_file: str | None = None) -> int:
@@ -209,8 +210,8 @@ class Phase1RegressionTests(unittest.TestCase):
             return 0
 
         args = make_args(check_only=True, strict=False, push=False, publish=False)
-        with patch("pnp.cli.run_doctor", side_effect=fake_doctor):
-            with patch("pnp.cli._find_repo_noninteractive", return_value="."):
+        with patch("pnp.audit.run_doctor", side_effect=fake_doctor):
+            with patch("pnp.audit._find_repo_noninteractive", return_value="."):
                 with redirect_stdout(StringIO()):
                     code = run_check_only(args, utils.Output(quiet=False))
         self.assertEqual(code, 10)
@@ -218,7 +219,7 @@ class Phase1RegressionTests(unittest.TestCase):
     def test_run_hooks_ci_fails_fast_on_first_error(self) -> None:
         o = Orchestrator(make_args(hooks="a; b", ci=True, interactive=False), repo_path=".")
         o.subpkg = "."
-        with patch("pnp.cli.run_hook", side_effect=RuntimeError("[1]: boom")) as hook:
+        with patch("pnp.workflow_engine.run_hook", side_effect=RuntimeError("[1]: boom")) as hook:
             with redirect_stdout(StringIO()):
                 _, result = o.run_hooks()
         self.assertIs(result, utils.StepResult.FAIL)
@@ -237,8 +238,8 @@ class Phase1RegressionTests(unittest.TestCase):
                 raise RuntimeError("[1]: first failed")
             return 0
 
-        with patch("pnp.cli.run_hook", side_effect=fake_run_hook) as hook:
-            with patch("pnp.cli.utils.intent", return_value=False) as intent:
+        with patch("pnp.workflow_engine.run_hook", side_effect=fake_run_hook) as hook:
+            with patch("pnp.workflow_engine.utils.intent", return_value=False) as intent:
                 with redirect_stdout(StringIO()):
                     _, result = o.run_hooks()
         self.assertIs(result, utils.StepResult.OK)
@@ -248,8 +249,8 @@ class Phase1RegressionTests(unittest.TestCase):
     def test_run_hooks_interactive_abort_on_user_choice(self) -> None:
         o = Orchestrator(make_args(hooks="a; b", ci=False, interactive=True), repo_path=".")
         o.subpkg = "."
-        with patch("pnp.cli.run_hook", side_effect=RuntimeError("[1]: failed")) as hook:
-            with patch("pnp.cli.utils.intent", return_value=True) as intent:
+        with patch("pnp.workflow_engine.run_hook", side_effect=RuntimeError("[1]: failed")) as hook:
+            with patch("pnp.workflow_engine.utils.intent", return_value=True) as intent:
                 with redirect_stdout(StringIO()):
                     msg, result = o.run_hooks()
         self.assertIs(result, utils.StepResult.ABORT)
@@ -266,8 +267,8 @@ class Phase1RegressionTests(unittest.TestCase):
             stdout="nano\n",
             stderr="",
         )
-        with patch("pnp.cli.subprocess.run", return_value=cp):
-            with patch("pnp.cli.shutil.which", return_value="/usr/bin/nano"):
+        with patch("pnp.ops.subprocess.run", return_value=cp):
+            with patch("pnp.ops.shutil.which", return_value="/usr/bin/nano"):
                 editor = o._resolve_editor_command()
         self.assertEqual(editor, ["nano"])
 
@@ -284,9 +285,9 @@ class Phase1RegressionTests(unittest.TestCase):
             return subprocess.CompletedProcess(args=cmd, returncode=0, stdout="", stderr="")
 
         with patch.object(o, "_resolve_editor_command", return_value=["fake-editor"]):
-            with patch("pnp.cli.subprocess.run", side_effect=fake_run):
-                with patch("pnp.cli.utils.suspend_console") as suspend:
-                    with patch("pnp.cli.utils.resume_console") as resume:
+            with patch("pnp.ops.subprocess.run", side_effect=fake_run):
+                with patch("pnp.ops.utils.suspend_console") as suspend:
+                    with patch("pnp.ops.utils.resume_console") as resume:
                         msg = o._edit_message_in_editor("seed message", "commit")
         suspend.assert_called_once()
         resume.assert_called_once()
@@ -311,7 +312,7 @@ class Phase1RegressionTests(unittest.TestCase):
             called["n"] += 1
             return "edited message"
 
-        with patch("pnp.cli.utils.gen_commit_message", return_value="seed message"):
+        with patch("pnp.workflow_engine.utils.gen_commit_message", return_value="seed message"):
             with patch.object(o, "_git_head", return_value="abc123"):
                 with patch.object(o, "_edit_message_in_editor", side_effect=fake_edit):
                     with patch.object(o, "gen_changelog", return_value=None):

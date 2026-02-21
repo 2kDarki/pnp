@@ -23,28 +23,21 @@ consistency.
 Uses `main` as the safe entry point to invoke the
 CLI.
 """
-from __future__ import annotations
+
 
 # ======================= STANDARDS =======================
-import subprocess
 import argparse
-import shutil
 import sys
 
 # ======================== LOCALS =========================
-from .ops import run_hook, manage_git_extension_install
-from . import workflow_engine as engine
-from .ops import show_effective_config
+from .ops import manage_git_extension_install, show_effective_config
+from .audit import run_doctor, run_check_only
+from .workflow_engine import Orchestrator
 from . import _constants as const
 from .help_menu import help_msg
-from . import audit as flow_ops
 from . import __version__
 from . import config
 from . import utils
-
-DOCTOR_SCHEMA = flow_ops.DOCTOR_SCHEMA
-CHECK_SCHEMA  = flow_ops.CHECK_SCHEMA
-
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(description=help_msg())
@@ -112,53 +105,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = _build_parser()
     parsed = parser.parse_args(argv)
     return config.apply_layered_config(parsed, argv, parser)
-
-
-def _find_repo_noninteractive(path: str) -> str | None:
-    """Compatibility wrapper for tests/patching."""
-    return flow_ops._find_repo_noninteractive(path)
-
-
-def run_doctor(path: str, out: utils.Output,
-               json_mode: bool = False,
-               report_file: str | None = None) -> int:
-    """Compatibility wrapper for extracted doctor implementation."""
-    return flow_ops.run_doctor(path, out,
-           json_mode=json_mode, report_file=report_file,
-           repo_finder=_find_repo_noninteractive)
-
-
-def run_check_only(args: argparse.Namespace,
-                   out: utils.Output) -> int:
-    """
-    Compatibility wrapper for extracted check-only
-    implementation.
-    """
-    return flow_ops.run_check_only(args, out,
-           doctor_fn=run_doctor,
-           repo_finder=_find_repo_noninteractive)
-
-
-def _run_hook_proxy(cmd: str, cwd: str, dryrun: bool,
-                    no_transmission: bool = False) -> int:
-    """Bridge for legacy patch points (`pnp.cli.run_hook`)."""
-    return run_hook(cmd, cwd, dryrun,
-           no_transmission=no_transmission)
-
-
-# Keep workflow engine bound to cli-level patch targets used
-# by tests.
-engine.run_hook       = _run_hook_proxy
-_WorkflowOrchestrator = engine.Orchestrator
-
-
-class Orchestrator(_WorkflowOrchestrator):
-    """Compatibility wrapper around extracted workflow engine."""
-
-    def __init__(self, argv: list[str] | argparse.Namespace,
-                 repo_path: str | None = None):
-        if isinstance(argv, list): argv = parse_args(argv)
-        super().__init__(argv, repo_path=repo_path)
 
 
 def main() -> None:

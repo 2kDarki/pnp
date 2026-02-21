@@ -1,5 +1,5 @@
 """CLI smoke tests for stable user-facing behavior."""
-from __future__ import annotations
+
 
 from pathlib import Path
 import subprocess
@@ -29,12 +29,14 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("--editor", cp.stdout)
 
     def test_ci_dry_run_without_repo_exits_non_zero(self) -> None:
-        cp = subprocess.run(
-            [sys.executable, "-m", "pnp", ".", "--dry-run", "--ci"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = subprocess.run(
+                [sys.executable, "-m", "pnp", ".", "--dry-run", "--ci"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=tmp,
+            )
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("no git repository found", cp.stdout)
 

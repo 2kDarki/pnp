@@ -308,19 +308,15 @@ Release process references:
 
 ## Internal Layout
 
-- `pnp/cli.py`: CLI argument parsing, dispatch, compatibility exports
+- `pnp/cli.py`: CLI argument parsing and dispatch
 - `pnp/workflow_engine.py`: orchestration and workflow step sequencing
 - `pnp/ops.py`: shared process/git/editor utility operations
 - `pnp/audit.py`: doctor and check-only audit flows
-- `pnp/workflows.py`: backward-compatible re-exports from `pnp/audit.py`
 
 ## CI Workflows
 
-- `CI` workflow runs on pushes and pull requests:
-  - Python `3.10`, `3.11`, `3.12`
-  - Ubuntu, macOS, and Windows
-  - Syntax check + mypy + unittest suite + package metadata check
-- `Publish to PyPI` workflow runs on `v*` tags and is gated by the test suite.
+- `Publish to PyPI` workflow runs on `v*` tags via `.github/workflows/publish.yml`.
+- Recommended local gate before tagging: `make check`.
 
 ---
 

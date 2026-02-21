@@ -5,11 +5,10 @@
 Project is at a stable production baseline with CI, schema contracts, and expanded failure-path coverage passing.
 
 Latest structural cleanup grouped code by concern:
-- `pnp/cli.py`: entrypoint and compatibility bridges.
+- `pnp/cli.py`: entrypoint and dispatch only (no compatibility shim layer).
 - `pnp/workflow_engine.py`: workflow orchestration and step control flow.
 - `pnp/ops.py`: shared utility/process/git/editor operations.
 - `pnp/audit.py`: doctor + check-only audit/preflight logic.
-- `pnp/workflows.py`: compatibility re-export shim to avoid import breakage.
 
 ## Validation Baseline
 
@@ -27,16 +26,12 @@ This covers:
 - full unittest suite
 - JSON schema contract gate (`tools/schema_gate.py`)
 
-## Compatibility Constraints (Do Not Break)
+## Compatibility Constraints
 
-Legacy tests patch symbols via `pnp.cli`; keep these stable unless tests/docs are updated together:
-- `pnp.cli.Orchestrator`
-- `pnp.cli.run_hook`
-- `pnp.cli.run_doctor`
-- `pnp.cli.run_check_only`
-- `pnp.cli._find_repo_noninteractive`
-
-`pnp/workflows.py` currently exists as a compatibility shim and re-exports from `pnp.audit`.
+No legacy compatibility shim layer is required. Patch and extend canonical modules directly:
+- workflow: `pnp.workflow_engine`
+- operations: `pnp.ops`
+- preflight/audit: `pnp.audit`
 
 ## Current Top Priorities
 
@@ -69,4 +64,3 @@ Before release/tag:
    - `python -m pnp --help`
    - `python -m pnp . --doctor`
    - `python -m pnp . --check-only --check-json`
-
