@@ -1,6 +1,4 @@
 """Policy matrix for resolver remediation actions."""
-
-
 from dataclasses import dataclass
 
 
@@ -124,8 +122,6 @@ def can_run_remediation(
 def requires_confirmation(action: str, autofix: bool) -> bool:
     """Whether a remediation action needs explicit confirmation prompt."""
     rule = REMEDIATION_POLICY.get(action)
-    if rule is None:
-        return False
-    if autofix:
-        return False
+    if rule is None: return False
+    if autofix: return False
     return rule.requires_confirmation

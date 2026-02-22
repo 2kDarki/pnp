@@ -23,8 +23,6 @@ consistency.
 Uses `main` as the safe entry point to invoke the
 CLI.
 """
-
-
 # ======================= STANDARDS =======================
 import argparse
 import json
@@ -32,20 +30,18 @@ import sys
 import os
 
 # ======================== LOCALS =========================
-from .ops import manage_git_extension_install, show_effective_config
-from .debug_report import build_debug_report
-from . import telemetry
-from .error_model import (
-    FailureEvent,
-    build_error_envelope,
-    error_policy_for,
-    resolve_failure_code,
-)
+from .error_model import FailureEvent, build_error_envelope
+from .ops import manage_git_extension_install
+from .error_model import resolve_failure_code
 from .audit import run_doctor, run_check_only
+from .debug_report import build_debug_report
+from .error_model import error_policy_for
 from .workflow_engine import Orchestrator
+from .ops import show_effective_config
 from . import _constants as const
 from .help_menu import help_msg
 from . import __version__
+from . import telemetry
 from . import config
 from . import utils
 
@@ -88,8 +84,8 @@ def _emit_runtime_failure_ux(
     out: utils.Output,
 ) -> None:
     """Emit concise failure summary with optional advanced details."""
-    code = str(envelope.get("code", "")).strip()
-    step = str(envelope.get("step", "")).strip()
+    code    = str(envelope.get("code", "")).strip()
+    step    = str(envelope.get("step", "")).strip()
     message = str(envelope.get("message", "")).strip()
     summary, one_liner = COMMON_FAILURE_FIXES.get(
         code,
@@ -113,8 +109,7 @@ def _emit_runtime_failure_ux(
     out.warn(f"fix: {one_liner}")
 
     advanced = bool(getattr(args, "verbose", False) or getattr(args, "debug", False))
-    if not advanced:
-        return
+    if not advanced: return
 
     severity = str(envelope.get("severity", "")).strip()
     category = str(envelope.get("category", "")).strip()
@@ -123,14 +118,12 @@ def _emit_runtime_failure_ux(
     raw_ref = str(envelope.get("raw_ref", "")).strip()
     out.warn("advanced details:")
     out.warn(f"code={code} step={step} severity={severity} category={category}")
-    if message:
-        out.warn(f"message={message}")
+    if message: out.warn(f"message={message}")
     if stderr_excerpt:
         out.warn(f"stderr_excerpt={stderr_excerpt}")
     if suggested_fix:
         out.warn(f"suggested_fix={suggested_fix}")
-    if raw_ref:
-        out.warn(f"envelope_ref={raw_ref}")
+    if raw_ref: out.warn(f"envelope_ref={raw_ref}")
 
 
 def _build_runtime_error_envelope(
@@ -145,37 +138,42 @@ def _build_runtime_error_envelope(
     message = str(error).strip() or "workflow failure"
     suggested_fix = "Run with --debug for traceback and inspect pnplog."
 
-    hint_step = ""
-    hint_message = ""
-    hint_code = ""
+    hint_step     = ""
+    hint_message  = ""
+    hint_code     = ""
     hint_severity = ""
     hint_category = ""
     if isinstance(failure_hint, FailureEvent):
-        hint_step = failure_hint.step
-        hint_message = failure_hint.message
-        hint_code = failure_hint.code
+        hint_step     = failure_hint.step
+        hint_message  = failure_hint.message
+        hint_code     = failure_hint.code
         hint_severity = failure_hint.severity
         hint_category = failure_hint.category
     elif isinstance(failure_hint, dict):
-        hint_step = str(failure_hint.get("step", "")).strip()
-        hint_message = str(failure_hint.get("message", "")).strip()
-        hint_code = str(failure_hint.get("code", "")).strip()
-        hint_severity = str(failure_hint.get("severity", "")).strip()
-        hint_category = str(failure_hint.get("category", "")).strip()
+        hint_step     = str(failure_hint.get("step",
+                        "")).strip()
+        hint_message  = str(failure_hint.get("message",
+                        "")).strip()
+        hint_code     = str(failure_hint.get("code",
+                        "")).strip()
+        hint_severity = str(failure_hint.get("severity",
+                        "")).strip()
+        hint_category = str(failure_hint.get("category",
+                        "")).strip()
 
     if isinstance(error, KeyboardInterrupt):
-        code = "PNP_INT_KEYBOARD_INTERRUPT"
+        code     = "PNP_INT_KEYBOARD_INTERRUPT"
         severity = "warn"
-        message = "workflow interrupted by keyboard input"
+        message  = "workflow interrupted by keyboard input"
         suggested_fix = "Rerun command when ready."
     elif isinstance(error, EOFError):
-        code = "PNP_INT_EOF_INTERRUPT"
+        code     = "PNP_INT_EOF_INTERRUPT"
         severity = "warn"
-        message = "workflow interrupted by EOF/input stream closure"
+        message  = "workflow interrupted by EOF/input stream closure"
         suggested_fix = "Ensure an interactive input stream and rerun."
     elif isinstance(error, SystemExit):
         severity = "error" if exit_code else "info"
-        message = f"workflow exited with code {exit_code}"
+        message  = f"workflow exited with code {exit_code}"
         suggested_fix = "Inspect prior step output and rerun."
         code = resolve_failure_code(
             step=hint_step,
@@ -192,12 +190,10 @@ def _build_runtime_error_envelope(
     )
     severity = policy["severity"]
     category = policy["category"]
-    if hint_severity:
-        severity = hint_severity
-    if hint_category:
-        category = hint_category
+    if hint_severity: severity = hint_severity
+    if hint_category: category = hint_category
 
-    target = os.path.abspath(getattr(args, "path", "."))
+    target  = os.path.abspath(getattr(args, "path", "."))
     context = {
         "path": target,
         "repo": "",
@@ -208,8 +204,7 @@ def _build_runtime_error_envelope(
     }
 
     step = "orchestrate"
-    if hint_step:
-        step = hint_step
+    if hint_step: step = hint_step
 
     envelope = build_error_envelope(
         code=code,
@@ -400,11 +395,11 @@ def main() -> None:
         code = 1
         exit = (KeyboardInterrupt, EOFError, SystemExit)
         if const.DEBUG: raise e
-        if isinstance(e, SystemExit):
+        if isinstance(e, exit[2]):
             if isinstance(e.code, int): code = e.code
         if not isinstance(e, exit): out.warn(f"ERROR: {e}")
         elif not isinstance(e, exit[2]):
-            i = 1 if not isinstance(e, EOFError) else 2
+            i = 1 if not isinstance(e, exit[1]) else 2
             out.raw("\n" * i + const.PNP, end="")
             out.raw(utils.color("forced exit", const.BAD))
     finally:

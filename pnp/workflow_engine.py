@@ -1,6 +1,4 @@
 """Workflow orchestration engine for pnp."""
-
-
 from datetime import datetime
 from typing import Any, cast
 from pathlib import Path
@@ -86,8 +84,7 @@ class Orchestrator:
         if code:
             policy = error_policy_for(code, fallback_category="workflow")
             category = policy["category"]
-            if not severity:
-                severity = policy["severity"]
+            if not severity: severity = policy["severity"]
         return code, severity, category
 
     def _set_failure_hint(

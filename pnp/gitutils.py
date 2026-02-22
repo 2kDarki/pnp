@@ -178,14 +178,11 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     """
     if const.DRY_RUN: return 1, DRYRUN + "skips process"
     now = time.monotonic()
-    if started_at is None:
-        started_at = now
+    if started_at is None: started_at = now
     if timeout_budget_s is None:
         timeout_budget_s = DEFAULT_STEP_TIMEOUT_BUDGET_S
-    if failure_counts is None:
-        failure_counts = {}
-    if signature_counts is None:
-        signature_counts = {}
+    if failure_counts is None: failure_counts = {}
+    if signature_counts is None: signature_counts = {}
     elapsed = now - started_at
     remaining = timeout_budget_s - elapsed
     if remaining <= 0:
@@ -200,8 +197,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         )
     except subprocess.TimeoutExpired:
         return 124, "git step timeout budget exceeded"
-    except KeyboardInterrupt:
-        return 130, "cancelled by user"
+    except KeyboardInterrupt: return 130, "cancelled by user"
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     out    = (stdout or stderr).strip()
@@ -266,8 +262,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
                 return 124, "git step timeout budget exceeded"
             if delay_s > 0:
                 sleep_s = min(delay_s, max(remaining, 0.0))
-                try:
-                    time.sleep(sleep_s)
+                try: time.sleep(sleep_s)
                 except KeyboardInterrupt:
                     return 130, "cancelled by user"
             telemetry.emit_event(

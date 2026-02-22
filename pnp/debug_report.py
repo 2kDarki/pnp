@@ -1,6 +1,4 @@
 """Build sanitized debug support bundles for postmortems."""
-
-
 from datetime import datetime, timezone
 from argparse import Namespace
 from collections import deque
@@ -31,19 +29,15 @@ def _tail_lines(path: Path, max_lines: int = 200) -> list[str]:
     try:
         with path.open("r", encoding="utf-8") as f:
             return list(deque((line.rstrip("\n") for line in f), maxlen=max_lines))
-    except Exception:
-        return []
+    except Exception: return []
 
 
 def _tail_jsonl(path: Path, max_rows: int = 400) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for line in _tail_lines(path, max_lines=max_rows):
-        try:
-            obj = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
+        try: obj = json.loads(line)
+        except Exception: continue
+        if isinstance(obj, dict): rows.append(obj)
     return rows
 
 
@@ -57,8 +51,7 @@ def _safe_git(path: str, args: list[str]) -> str:
             text=True,
             timeout=4,
         )
-    except Exception:
-        return ""
+    except Exception: return ""
     out = (cp.stdout or cp.stderr or "").strip()
     return out[:5000]
 
@@ -66,8 +59,7 @@ def _safe_git(path: str, args: list[str]) -> str:
 def _git_snapshot(target: str) -> dict[str, Any]:
     inside = _safe_git(target, ["rev-parse", "--is-inside-work-tree"]).lower()
     is_repo = inside == "true"
-    if not is_repo:
-        return {"is_repo": False}
+    if not is_repo: return {"is_repo": False}
     return {
         "is_repo": True,
         "top_level": _safe_git(target, ["rev-parse", "--show-toplevel"]),

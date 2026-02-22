@@ -1,6 +1,4 @@
 """Health and preflight checks extracted from CLI module."""
-
-
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Callable
@@ -100,10 +98,13 @@ def _doctor_error_envelope(
     warnings: int,
 ) -> dict[str, object]:
     """Build envelope for doctor JSON/report output."""
-    repo = ""
-    first_fail = next((c for c in checks if c["status"] == "fail"), None)
-    first_warn = next((c for c in checks if c["status"] == "warn"), None)
-    repo_check = next((c for c in checks if c["name"] == "repository"), None)
+    repo       = ""
+    first_fail = next((c for c in checks if c["status"] ==
+                 "fail"), None)
+    first_warn = next((c for c in checks if c["status"] ==
+                 "warn"), None)
+    repo_check = next((c for c in checks if c["name"] ==
+                 "repository"), None)
     if repo_check and repo_check["status"] == "ok":
         repo = repo_check["details"]
 
@@ -165,8 +166,10 @@ def _check_error_envelope(
     repo: str | None,
 ) -> dict[str, object]:
     """Build envelope for check-only JSON output."""
-    first_blocker = next((f for f in findings if f["level"] == "blocker"), None)
-    first_warn = next((f for f in findings if f["level"] == "warn"), None)
+    first_blocker = next((f for f in findings if f["level"]
+                    == "blocker"), None)
+    first_warn    = next((f for f in findings if f["level"]
+                    == "warn"), None)
     context = {
         "path": os.path.abspath(args.path),
         "repo": repo or "",
@@ -231,15 +234,14 @@ def _check_pyproject(path: Path) -> tuple[str, str]:
 
 
 def _check_package_json(path: Path) -> tuple[str, str]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+    try: data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
         return "warn", f"invalid package.json: {e}"
 
     if not isinstance(data, dict):
         return "warn", "invalid package.json: expected JSON object"
 
-    name = data.get("name")
+    name    = data.get("name")
     version = data.get("version")
     if isinstance(name, str) and name.strip():
         if isinstance(version, str) and version.strip():
@@ -249,19 +251,16 @@ def _check_package_json(path: Path) -> tuple[str, str]:
 
 
 def _check_go_mod(path: Path) -> tuple[str, str]:
-    try:
-        text = path.read_text(encoding="utf-8")
+    try: text = path.read_text(encoding="utf-8")
     except Exception as e:
         return "warn", f"unable to read go.mod: {e}"
 
     for line in text.splitlines():
         raw = line.strip()
-        if not raw or raw.startswith("//"):
-            continue
+        if not raw or raw.startswith("//"): continue
         if raw.startswith("module "):
             module = raw.removeprefix("module ").strip()
-            if module:
-                return "ok", f"go module: {module}"
+            if module: return "ok", f"go module: {module}"
             return "warn", "go.mod has empty module directive"
         break
     return "warn", "go.mod missing module directive"
@@ -307,7 +306,7 @@ def _check_pom_xml(path: Path) -> tuple[str, str]:
         return ""
 
     artifact = text("artifactId")
-    version = text("version")
+    version  = text("version")
     if not artifact:
         return "warn", "pom.xml missing required key: artifactId"
     if version:
@@ -316,8 +315,7 @@ def _check_pom_xml(path: Path) -> tuple[str, str]:
 
 
 def _check_composer_json(path: Path) -> tuple[str, str]:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+    try: data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as e:
         return "warn", f"invalid composer.json: {e}"
 
@@ -335,7 +333,7 @@ def _check_project_toml(path: Path) -> tuple[str, str]:
     except Exception as e:
         return "warn", f"invalid Project.toml: {e}"
 
-    name = data.get("name")
+    name    = data.get("name")
     version = data.get("version")
     if isinstance(name, str) and name.strip():
         if isinstance(version, str) and version.strip():
@@ -357,7 +355,7 @@ _METADATA_CHECKERS: dict[str, Callable[[Path], tuple[str, str]]] = {
 
 def _metadata_check(pkg_root: str) -> tuple[str, str]:
     """Return (status, details) for project metadata detection."""
-    root = Path(pkg_root)
+    root    = Path(pkg_root)
     markers = [
         marker
         for marker in utils.PROJECT_MARKERS
@@ -367,7 +365,7 @@ def _metadata_check(pkg_root: str) -> tuple[str, str]:
         return "warn", "no known project manifest detected"
 
     warnings: list[str] = []
-    details: list[str] = []
+    details:  list[str] = []
 
     for marker in markers:
         checker = _METADATA_CHECKERS.get(marker)
@@ -375,13 +373,10 @@ def _metadata_check(pkg_root: str) -> tuple[str, str]:
             details.append(f"{marker} detected")
             continue
         status, detail = checker(root / marker)
-        if status == "warn":
-            warnings.append(detail)
-        else:
-            details.append(detail)
+        if status == "warn": warnings.append(detail)
+        else: details.append(detail)
 
-    if warnings:
-        return "warn", "; ".join(warnings)
+    if warnings: return "warn", "; ".join(warnings)
     return "ok", "; ".join(details)
 
 
@@ -395,8 +390,7 @@ def _has_test_footprint(pkg_root: str) -> bool:
         return True
 
     for pattern in _GENERAL_TEST_FILE_PATTERNS:
-        if list(root.rglob(pattern)):
-            return True
+        if list(root.rglob(pattern)): return True
     return False
 
 

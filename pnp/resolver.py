@@ -27,14 +27,16 @@ from .resolver_classifier import (
     classify_stderr as classifier_classify_stderr,
     reset_telemetry as reset_classifier_telemetry,
     rule_conflict_count as classifier_rule_conflict_count,
-    unknown_classification_count as classifier_unknown_count,
+    unknown_classification_count as classifier_unknown_count
 )
-from .resolver_policy import PolicyDecision, decide as apply_policy
 from .utils import transmit, any_in, color, wrap, Output
 from .utils import StepResult, wrap_text, intent, auto
+from .resolver_policy import decide as apply_policy
 from .remediation_policy import can_run_remediation
 from ._constants import I, BAD, INFO, CURSOR
+from .resolver_policy import PolicyDecision
 from . import _constants as const
+from .utils import get_shell
 from . import telemetry
 
 
@@ -116,11 +118,12 @@ def _emit_remediation_event(
 class Handlers:
     """
     Instance with callable interface.
-    Returns status codes or raises to signal fatal conditions
+    Returns status codes or raises to signal fatal
+    conditions.
 
     API notes:
-        - stderr: the stderr string as captured from a failed
-                  git command
+        - stderr: the stderr string as captured from a
+                  failed git command
         - cwd: current working directory
         - Caller should inspect StepResult:
                OK -> handled successfully and caller may
@@ -175,7 +178,7 @@ class Handlers:
             interactive=not bool(const.CI_MODE),
         )
         outcome = "allowed" if allowed else "blocked"
-        detail = {"reason": reason} if reason else {}
+        detail  = {"reason": reason} if reason else {}
         _emit_remediation_event(action, outcome, detail)
         return allowed, reason
 
@@ -185,8 +188,7 @@ class Handlers:
         result: StepResult,
         note: str = "",
     ) -> tuple[bool, StepResult]:
-        if not const.DRY_RUN:
-            return False, result
+        if not const.DRY_RUN: return False, result
         msg = f"{const.DRYRUN}simulate remediation: {action}"
         self.prompt(msg)
         detail: dict[str, str] = {"result": str(result.value)}
@@ -196,8 +198,12 @@ class Handlers:
         return True, result
 
     def dubious_ownership(self, cwd: str) -> StepResult:
-        """Handle 'dubious ownership' by asking to add safe.directory to git config"""
-        allowed, reason = self._allow_remediation("git_safe_directory")
+        """
+        Handle 'dubious ownership' by asking to add
+        safe.directory to git config
+        """
+        allowed, reason = self._allow_remediation(
+                          "git_safe_directory")
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
@@ -214,12 +220,11 @@ class Handlers:
             result=StepResult.OK,
             note="would run git config --global --add safe.directory",
         )
-        if simulated:
-            return result
+        if simulated: return result
 
         cmd = ["git", "config", "--global", "--add",
                "safe.directory", cwd]
-        cp = _run(cmd, cwd)
+        cp  = _run(cmd, cwd)
         if cp.returncode == 0:
             _emit_remediation_event("git_safe_directory", "success")
             self.success("marked directory as safe")
@@ -238,9 +243,11 @@ class Handlers:
             - Show diagnostics (git fsck --full)
             - Offer: (1) open shell for manual fix
                      (2) attempt hard reset (git reset)
-                     (3) skip commit & continue
-                     (4) abort
+                     (3) attempt safe reset
+                     (4) skip staging/commit & continue
+                     (5) abort
         """
+        step = "staging"
         if not any_in("diff status", "null sha1", eq=stderr):
             step  = "commit"
             issue = "missing/dangling blobs"
@@ -259,11 +266,9 @@ class Handlers:
                    if file_hint else "git commit failed: "
                     + "encountered an invalid object")
         elif "diff status" in stderr:
-            step  = "staging"
             issue = "bad index file sha1 signature"
             self.warn("git add failed: unexpected diff status A")
         else:
-            step  = "staging"
             issue = "cache entry's null sha1"
             self.warn("git add failed: cache entry has null sha1")
 
@@ -306,18 +311,21 @@ class Handlers:
 
             opt = input(CURSOR).strip().lower(); print()
         else:
-            can_reset, _ = self._allow_remediation("destructive_reset")
+            can_reset, _ = self._allow_remediation(
+                           "destructive_reset")
             if can_reset:
-                self.prompt(auto("attempting hard auto-repair to"
-                                f" resolve {issue}"))
+                self.prompt(auto("attempting hard "
+                    f"auto-repair to resolve {issue}"))
                 opt = "2"
             else:
-                self.prompt(auto("destructive reset disabled by policy; "
-                                "skipping and continuing"))
+                self.prompt(auto("destructive reset "
+                    "disabled by policy; skipping and "
+                    "continuing"))
                 opt = "4"
 
         if opt == "1":
-            allowed, reason = self._allow_remediation("open_shell_manual")
+            allowed, reason = self._allow_remediation(
+                              "open_shell_manual")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -325,23 +333,21 @@ class Handlers:
                 action="open_shell_manual",
                 result=StepResult.RETRY,
             )
-            if simulated:
-                return result
+            if simulated: return result
             self.info("opening subshell...")
 
             # try to open interactive shell
-            os_shell = shutil.which("bash") \
-                    or shutil.which("zsh") \
-                    or shutil.which("sh")
-            if not os_shell:
+            shell = get_shell()
+            if not shell:
                 self.warn("no shell available")
                 return StepResult.FAIL
-            _run([os_shell], cwd, check=False,
+            _run([shell], cwd, check=False,
                 capture=False, text=True)
             _emit_remediation_event("open_shell_manual", "success")
             return StepResult.RETRY
         if opt == "2":
-            allowed, reason = self._allow_remediation("destructive_reset")
+            allowed, reason = self._allow_remediation(
+                              "destructive_reset")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -349,8 +355,7 @@ class Handlers:
                 action="destructive_reset",
                 result=StepResult.RETRY,
             )
-            if simulated:
-                return result
+            if simulated: return result
             if "null sha1" in stderr:
                 _run(["rm", ".git/index"], cwd, check=True)
             try:
@@ -364,8 +369,9 @@ class Handlers:
                 self.warn("auto-repair failed — manual "
                           "intervention may be required")
                 return StepResult.FAIL
-        if opt == "3":
-            allowed, reason = self._allow_remediation("safe_fix_network")
+        if opt == "3":  # TODO
+            allowed, reason = self._allow_remediation(
+                              "safe_fix_network")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -378,7 +384,8 @@ class Handlers:
             self.warn("ERROR: method not implemented")
             return StepResult.FAIL
         if opt == "4":
-            allowed, reason = self._allow_remediation("skip_continue")
+            allowed, reason = self._allow_remediation(
+                              "skip_continue")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -386,9 +393,8 @@ class Handlers:
                 action="skip_continue",
                 result=StepResult.OK,
             )
-            if simulated:
-                return result
-            self.prompt("skipping commit and continuing")
+            if simulated: return result
+            self.prompt(f"skipping {step} and continuing")
             _emit_remediation_event("skip_continue", "success")
             return StepResult.OK
 
@@ -453,15 +459,15 @@ class Handlers:
                     if item.is_dir():
                         shutil.copytree(item, dest,
                             dirs_exist_ok=True)
-                    else:
-                        shutil.copy2(item, dest)
+                    else: shutil.copy2(item, dest)
                 self.success("restored files from backup")
             except Exception:
                 self.warn("restore failed. Manual "
                           "intervention required")
             return StepResult.FAIL
 
-        # Step 3: restore backed-up non-hidden files into cwd
+        # Step 3: restore backed-up non-hidden files into
+        #         cwd
         try:
             self.prompt("restoring local (uncommitted) "
                         "changes from backup...")
@@ -513,7 +519,8 @@ class Handlers:
     def lock_contention(self, stderr: str, cwd: str) -> StepResult:
         """Handle stale git lock-file contention when safe to clean."""
         self.warn("git lock contention detected")
-        allowed, reason = self._allow_remediation("stale_lock_cleanup")
+        allowed, reason = self._allow_remediation(
+                          "stale_lock_cleanup")
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
@@ -537,9 +544,9 @@ class Handlers:
         seen: set[str] = set()
         unique_candidates: list[Path] = []
         for candidate in lock_candidates:
-            key = str(candidate.resolve()) if candidate.exists() else str(candidate)
-            if key in seen:
-                continue
+            key = str(candidate.resolve()) \
+               if candidate.exists() else str(candidate)
+            if key in seen: continue
             seen.add(key)
             unique_candidates.append(candidate)
         lock: Path | None = None
@@ -556,10 +563,8 @@ class Handlers:
             )
             return StepResult.FAIL
         git_dir = (repo / ".git").resolve()
-        try:
-            lock_resolved = lock.resolve()
-        except Exception:
-            lock_resolved = lock
+        try: lock_resolved = lock.resolve()
+        except Exception: lock_resolved = lock
         if git_dir not in lock_resolved.parents:
             self.warn("refusing lock cleanup outside repository .git directory")
             _emit_remediation_event(
@@ -573,8 +578,7 @@ class Handlers:
             result=StepResult.RETRY,
             note=f"would remove {lock}",
         )
-        if simulated:
-            return result
+        if simulated: return result
         try:
             if lock.exists():
                 lock.unlink()
@@ -603,7 +607,8 @@ class Handlers:
     def upstream_missing(self, stderr: str, cwd: str) -> StepResult:
         """Handle missing upstream branch by setting tracking branch."""
         self.warn("branch has no upstream tracking configuration")
-        allowed, reason = self._allow_remediation("set_upstream_tracking")
+        allowed, reason = self._allow_remediation(
+                          "set_upstream_tracking")
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
@@ -612,8 +617,7 @@ class Handlers:
             result=StepResult.RETRY,
             note="would run git push --set-upstream <remote> <branch>",
         )
-        if simulated:
-            return result
+        if simulated: return result
         try:
             cp_branch = _run(
                 ["git", "branch", "--show-current"],
@@ -629,12 +633,12 @@ class Handlers:
                 )
                 return StepResult.FAIL
             cp_remote = _run(["git", "remote"], cwd)
-            remotes = [r.strip() for r in (cp_remote.stdout or "").splitlines() if r.strip()]
+            remotes   = [r.strip() for r in 
+                        (cp_remote.stdout or ""
+                        ).splitlines() if r.strip()]
             remote = remotes[0] if remotes else "origin"
-            cp = _run(
-                ["git", "push", "--set-upstream", remote, branch],
-                cwd,
-            )
+            cp     = _run(["git", "push", "--set-upstream",
+                     remote, branch], cwd)
             if cp.returncode == 0:
                 _emit_remediation_event(
                     "set_upstream_tracking",
@@ -673,23 +677,24 @@ class Handlers:
             }
             for key, desc in options.items():
                 print(wrap_text(f"{key}. {desc}", I + 3, I))
-            choice = input(CURSOR).strip() or "3"
-            print()
-        else:
-            choice = "1"
+
+            choice = input(CURSOR).strip() or "3"; print()
+        else: choice = "1"
         if choice == "1":
-            allowed, reason = self._allow_remediation("open_token_page")
+            allowed, reason = self._allow_remediation(
+                              "open_token_page")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
             self.prompt("visit https://github.com/settings/tokens to refresh credentials")
             return StepResult.FAIL
         if choice == "2":
-            allowed, reason = self._allow_remediation("open_shell_manual")
+            allowed, reason = self._allow_remediation(
+                              "open_shell_manual")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
-            shell = shutil.which("bash") or shutil.which("zsh") or shutil.which("sh")
+            shell = get_shell()
             if not shell:
                 self.warn("no shell available")
                 return StepResult.FAIL
@@ -718,16 +723,16 @@ class Handlers:
             }
             for key, desc in options.items():
                 print(wrap_text(f"{key}. {desc}", I + 3, I))
-            choice = input(CURSOR).strip() or "3"
-            print()
-        else:
-            choice = "2"
+
+            choice = input(CURSOR).strip() or "3"; print()
+        else: choice = "2"
         if choice == "1":
-            allowed, reason = self._allow_remediation("open_shell_manual")
+            allowed, reason = self._allow_remediation(
+                              "open_shell_manual")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
-            shell = shutil.which("bash") or shutil.which("zsh") or shutil.which("sh")
+            shell = get_shell()
             if not shell:
                 self.warn("no shell available")
                 return StepResult.FAIL
@@ -798,7 +803,7 @@ class Handlers:
                 print(wrap_text(f"{key}. {desc}", I + 3, I))
 
             try:
-                raw = input(CURSOR).strip(); print()
+                raw    = input(CURSOR).strip(); print()
                 choice = raw or "7"
                 if choice not in options:
                     transmit("invalid choice", fg=BAD)
@@ -807,13 +812,13 @@ class Handlers:
                 if isinstance(e, EOFError): print()
                 self.abort()
         else:
-            can_ssh, _ = self._allow_remediation("add_origin_ssh")
+            can_ssh, _ = self._allow_remediation(
+                         "add_origin_ssh")
             if can_ssh:
                 msg = auto("attempting to add origin via SSH")
                 self.prompt(msg)
                 choice = "2"
-            else:
-                choice = "6"
+            else: choice = "6"
 
         def get_repo_info() -> tuple[str, str]:
             repo_arg = const.GH_REPO
@@ -832,28 +837,31 @@ class Handlers:
                 raise RuntimeError("unreachable")
 
         # handle choices
-        g    = "github.com"
-        mock = None
+        gh   = "github.com"
+        prvt = None
         if choice == "1":
-            allowed, reason = self._allow_remediation("add_origin_https")
+            allowed, reason = self._allow_remediation(
+                              "add_origin_https")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
             info = get_repo_info()
             if not info: return StepResult.FAIL
             user, repo = info
-            url = f"https://{g}/{user}/{repo}.git"
+            url = f"https://{gh}/{user}/{repo}.git"
         elif choice == "2":
-            allowed, reason = self._allow_remediation("add_origin_ssh")
+            allowed, reason = self._allow_remediation(
+                              "add_origin_ssh")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
             info = get_repo_info()
             if not info: return StepResult.FAIL
             user, repo = info
-            url = f"git@{g}:{user}/{repo}.git"
+            url = f"git@{gh}:{user}/{repo}.git"
         elif choice == "3":
-            allowed, reason = self._allow_remediation("add_origin_token")
+            allowed, reason = self._allow_remediation(
+                              "add_origin_token")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -871,34 +879,35 @@ class Handlers:
             info = get_repo_info()
             if not info: return StepResult.FAIL
             user, repo = info
-            url  = f"https://{token}@{g}/{user}/{repo}.git"
-            mock = f"https://***@{g}/{user}/{repo}.git"
+            url  = f"https://{token}@{gh}/{user}/{repo}.git"
+            prvt = f"https://***@{gh}/{user}/{repo}.git"
         elif choice == "4":
-            allowed, reason = self._allow_remediation("open_token_page")
+            allowed, reason = self._allow_remediation(
+                             "open_token_page")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
-            self.prompt(f"visit https://{g}/settings/tokens "
-                        "to create a token")
+            self.prompt(f"visit https://{gh}/settings/"
+                "tokens to create a token")
             return StepResult.FAIL
         elif choice == "5":
-            allowed, reason = self._allow_remediation("open_shell_manual")
+            allowed, reason = self._allow_remediation(
+                              "open_shell_manual")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
             self.prompt("opening subshell. Fix remotes "
                         "manually. Exit to continue")
-            os_shell = shutil.which("bash") \
-                    or shutil.which("zsh") \
-                    or shutil.which("sh")
-            if not os_shell:
+            shell = get_shell()
+            if not shell:
                 self.warn("no shell available")
                 return StepResult.FAIL
-            _run([os_shell], cwd, check=False,
+            _run([shell], cwd, check=False,
                 capture=False, text=True)
             return StepResult.RETRY
         elif choice == "6":
-            allowed, reason = self._allow_remediation("skip_continue")
+            allowed, reason = self._allow_remediation(
+                              "skip_continue")
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
@@ -906,8 +915,7 @@ class Handlers:
                 action="skip_continue",
                 result=StepResult.OK,
             )
-            if simulated:
-                return result
+            if simulated: return result
             self.prompt("skipping fix and continuing")
             _emit_remediation_event("skip_continue", "success")
             return StepResult.OK
@@ -919,7 +927,7 @@ class Handlers:
             self.abort("aborting as requested")
             return StepResult.FAIL
 
-        mock = mock if mock else url
+        prvt       = prvt if prvt else url
         action_map = {
             "1": "add_origin_https",
             "2": "add_origin_ssh",
@@ -930,10 +938,9 @@ class Handlers:
             action=action,
             result=StepResult.RETRY,
         )
-        if simulated:
-            return result
+        if simulated: return result
         try:
-            self.prompt(f"adding remote {remote!r}↴\n{mock}")
+            self.prompt(f"adding remote {remote!r}↴\n{prvt}")
             cp = _run(["git", "remote", "add", remote,
                  url], cwd, check=True)
             if cp.returncode != 0:
@@ -955,7 +962,7 @@ class Handlers:
             self.prompt("updated remotes↴")
             r1, r2 = cp2.stdout.strip().splitlines()
             r1, r2 = r1.split(), r2.split()
-            r1[1] = r2[1] = mock
+            r1[1]  = r2[1] = prvt
             r1, r2 = " ".join(r1), " ".join(r2)
             self.info(f"{r1}\n{r2}", prefix=False)
         except Exception as e:
@@ -994,8 +1001,7 @@ def normalize_stderr(stderr: Exception | str,
 
     Returns a string suitable for display
     """
-    if isinstance(stderr, Exception):
-        stderr = str(stderr)
+    if isinstance(stderr, Exception): stderr = str(stderr)
 
     # Collapse repeated whitespace and trim
     text = " ".join(stderr.strip().split())

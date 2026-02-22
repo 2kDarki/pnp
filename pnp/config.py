@@ -190,8 +190,7 @@ def _load_env_overrides() -> dict[str, str]:
 def _coerce(dest: str, raw: object, source: str,
             diagnostics: list[dict[str, str]]) -> object | None:
     spec = next((s for s in SPECS if s.dest == dest), None)
-    if spec is None:
-        return None
+    if spec is None: return None
     if spec.kind == "bool":
         value = _parse_bool_like(raw)
         if value is None:
@@ -234,7 +233,7 @@ def _explicit_cli_dests(argv: list[str], parser: ArgumentParser) -> set[str]:
 
 def apply_layered_config(args: Namespace, argv: list[str], parser: ArgumentParser) -> Namespace:
     """Apply git/env overrides unless destination was set explicitly by CLI."""
-    merged = Namespace(**vars(args))
+    merged   = Namespace(**vars(args))
     explicit = _explicit_cli_dests(argv, parser)
     py_vals, py_diags, pyproject_path = _load_pyproject_overrides(
         getattr(merged, "path", "."))

@@ -1,6 +1,7 @@
-"""Shared typed error envelope model for machine-readable failures."""
-
-
+"""
+Shared typed error envelope model for machine-readable
+failures.
+"""
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any
@@ -158,9 +159,9 @@ def resolve_failure_code(
 ) -> str:
     """Resolve a stable code for a runtime failure."""
     code = canonical_error_code(preferred_code)
-    if code:
-        return code
-    resolved = WORKFLOW_STEP_CODES.get(step.strip(), fallback_code)
+    if code: return code
+    resolved = WORKFLOW_STEP_CODES.get(step.strip(),
+               fallback_code)
     return canonical_error_code(resolved)
 
 

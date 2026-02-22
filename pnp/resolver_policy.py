@@ -1,6 +1,4 @@
 """Policy engine for resolver classifications."""
-
-
 from typing import Callable, Protocol
 from dataclasses import dataclass
 
@@ -78,12 +76,10 @@ def decide(
         "ref_conflict": lambda: remediation.ref_conflict(lowered, cwd),
     }
     dispatch = dispatch_map.get(classification.handler)
-    if dispatch is not None:
-        return done(dispatch())
+    if dispatch is not None: return done(dispatch())
 
     if classification.code == "PNP_GIT_EMPTY_STDERR":
         return done(StepResult.FAIL, handled=False)
 
-    if on_unhandled is not None:
-        on_unhandled()
+    if on_unhandled is not None: on_unhandled()
     return done(StepResult.FAIL, handled=False)

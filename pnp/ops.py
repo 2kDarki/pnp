@@ -1,6 +1,4 @@
 """Helper functions extracted from cli entrypoint."""
-
-
 from pathlib import Path
 import subprocess
 import tempfile

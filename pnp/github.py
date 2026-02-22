@@ -1,4 +1,7 @@
-"""Communicate with GitHub using GITHUB API, and create release and upload assets."""
+"""
+Communicate with GitHub using GITHUB API, and create release
+and upload assets.
+"""
 # ======================== STANDARDS =========================
 import os
 
@@ -6,8 +9,8 @@ import os
 import requests
 
 # ========================== LOCALS ==========================
-from ._constants import GITHUB as API
 from ._constants import GITHUB_UPLOADS as UPLOADS_API
+from ._constants import GITHUB as API
 
 
 def create_release(token: str, repo: str, tag: str,

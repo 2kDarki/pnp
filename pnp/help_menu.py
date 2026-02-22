@@ -1,5 +1,4 @@
 """Custom help output for pnp."""
-
 # ====================== STANDARDS ========================
 from typing import NoReturn
 import sys
@@ -207,7 +206,8 @@ def print_help(section: int = 0) -> None:
                        + "sanitized support bundle in "
                        + "pnplog")}
     Debug bundle file  {desc("--debug-report-file FILE to "
-                       + "override debug report output path")}
+                       + "override debug report output "
+                       + "path")}
     Doctor mode        {desc("--doctor to run local "
                        + "preflight audit checks (runtime, "
                        + "repo hygiene, metadata, release "

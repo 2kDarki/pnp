@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from pathlib import Path
 import subprocess
+import shutil
 import sys
 import os
 import re
@@ -71,6 +72,12 @@ def resume_console() -> None:
     resume = getattr(previous, "resume", None)
     if callable(resume): resume()
     else: bind_console(previous)
+
+
+def get_shell() -> str | None:
+    return shutil.which("bash") \
+        or shutil.which("zsh") \
+        or shutil.which("sh")
 
 
 def find_repo(path: str, batch: bool = False,

@@ -1,6 +1,4 @@
 """Pure stderr classification for resolver error taxonomy."""
-
-
 from dataclasses import asdict, dataclass
 from typing import Callable
 import re
@@ -15,8 +13,7 @@ class ErrorClassification:
     severity: str
     handler: str
 
-    def as_dict(self) -> dict[str, str]:
-        return asdict(self)
+    def as_dict(self) -> dict[str, str]: return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -166,16 +163,20 @@ CLASSIFICATION_RULES: tuple[ClassificationRule, ...] = (
 
 _UNKNOWN_CLASSIFICATION_COUNT = 0
 _RULE_CONFLICT_COUNT          = 0
-_URL_PATTERN                  = re.compile(r"https?://[^\s'\"`]+")
-_HTTPS_TOKEN_PATTERN          = re.compile(r"(https://)[^/\s@]+(@)")
+_URL_PATTERN                  = re.compile(
+                                r"https?://[^\s'\"`]+")
+_HTTPS_TOKEN_PATTERN          = re.compile(
+                                r"(https://)[^/\s@]+(@)")
 
 
 def normalize_stderr(stderr: str) -> str:
     """Normalize stderr for resilient, deterministic classification."""
     text = stderr.strip().lower()
-    if not text:
-        return ""
-    text = text.replace("`", "'").replace("’", "'").replace('"', "'")
+    if not text: return ""
+    text = text\
+           .replace("`", "'")\
+           .replace("’", "'")\
+           .replace('"', "'")
     text = _HTTPS_TOKEN_PATTERN.sub(r"\1<token>\2", text)
     text = _URL_PATTERN.sub("<url>", text)
     text = re.sub(r"\s+", " ", text)
@@ -197,7 +198,7 @@ def reset_telemetry() -> None:
     global _UNKNOWN_CLASSIFICATION_COUNT
     global _RULE_CONFLICT_COUNT
     _UNKNOWN_CLASSIFICATION_COUNT = 0
-    _RULE_CONFLICT_COUNT = 0
+    _RULE_CONFLICT_COUNT          = 0
 
 
 def _classify_code(code: str, handler: str) -> ErrorClassification:
@@ -212,8 +213,7 @@ def _classify_code(code: str, handler: str) -> ErrorClassification:
 def _classify_remote_issue(stderr_lower: str) -> int:
     """Return error type for remote/internet issues."""
     if "could not read from remote" in stderr_lower:
-        if "<url>" in stderr_lower:
-            return 2
+        if "<url>" in stderr_lower: return 2
     return 0
 
 
@@ -230,10 +230,10 @@ def classify(stderr: str) -> ErrorClassification:
         return _classify_code("PNP_GIT_UNCLASSIFIED", "fallback")
     if len(matched) > 1:
         # Conflict is expected to be rare and actionable for rule tuning.
-        non_route = [r for r in matched if r.code != "INTERNAL_REMOTE_ROUTE"]
-        resolved = {r.code for r in non_route}
-        if len(resolved) > 1:
-            _RULE_CONFLICT_COUNT += 1
+        non_route = [r for r in matched if r.code
+                 != "INTERNAL_REMOTE_ROUTE"]
+        resolved  = {r.code for r in non_route}
+        if len(resolved) > 1: _RULE_CONFLICT_COUNT += 1
     for rule in matched:
         if rule.code != "INTERNAL_REMOTE_ROUTE":
             return _classify_code(rule.code, rule.handler)

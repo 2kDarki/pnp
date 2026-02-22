@@ -1,6 +1,4 @@
 """Structured JSONL telemetry with run correlation and redaction."""
-
-
 from datetime import datetime, timezone
 from pathlib import Path
 import hashlib
@@ -35,8 +33,7 @@ def set_run_id(run_id: str | None = None) -> str:
 def run_id() -> str:
     """Get active run id, generating one if missing."""
     global _RUN_ID
-    if not _RUN_ID:
-        _RUN_ID = _new_run_id()
+    if not _RUN_ID: _RUN_ID = _new_run_id()
     return _RUN_ID
 
 
@@ -63,8 +60,7 @@ def _redact_text(text: str) -> str:
 
 def redact(value: object) -> object:
     """Recursively redact secrets from telemetry payloads."""
-    if isinstance(value, str):
-        return _redact_text(value)
+    if isinstance(value, str): return _redact_text(value)
     if isinstance(value, list):
         return [redact(v) for v in value]
     if isinstance(value, tuple):
@@ -76,8 +72,7 @@ def redact(value: object) -> object:
 
 def emit_event(event_type: str, step_id: str, payload: dict[str, object]) -> None:
     """Emit one JSONL telemetry event."""
-    if _EVENTS_FILE is None:
-        return
+    if _EVENTS_FILE is None: return
     event = {
         "ts": _now(),
         "run_id": run_id(),
@@ -89,6 +84,5 @@ def emit_event(event_type: str, step_id: str, payload: dict[str, object]) -> Non
         _EVENTS_FILE.parent.mkdir(parents=True, exist_ok=True)
         with _EVENTS_FILE.open("a", encoding="utf-8") as f:
             f.write(json.dumps(event, separators=(",", ":")) + "\n")
-    except Exception:
-        # telemetry must never break core flow
-        return
+    # telemetry must never break core flow
+    except Exception: return
