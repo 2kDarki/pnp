@@ -1,7 +1,15 @@
 # pnp — Push and Publish
 
-[![CI](https://github.com/2kDarki/pnp/actions/workflows/ci.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/ci.yml)
 [![Publish to PyPI](https://github.com/2kDarki/pnp/actions/workflows/publish.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/publish.yml)
+[![PyPI Version](https://img.shields.io/pypi/v/git-pnp.svg)](https://pypi.org/project/git-pnp/)
+[![Python Versions](https://img.shields.io/pypi/pyversions/git-pnp.svg)](https://pypi.org/project/git-pnp/)
+[![License](https://img.shields.io/github/license/2kDarki/pnp.svg)](LICENSE)
+[![GitHub Release](https://img.shields.io/github/v/release/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/releases)
+[![Last Commit](https://img.shields.io/github/last-commit/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/commits/main)
+[![Commit Activity](https://img.shields.io/github/commit-activity/m/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/commits/main)
+[![Repo Size](https://img.shields.io/github/repo-size/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp)
+[![Stars](https://img.shields.io/github/stars/2kDarki/pnp.svg?style=social)](https://github.com/2kDarki/pnp/stargazers)
+[![Issues](https://img.shields.io/github/issues/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/issues)
 
 **pnp** is a lightweight CLI tool to automate common Git
 workflow steps for any project type:
