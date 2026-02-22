@@ -32,11 +32,7 @@ jobs:
           PNP_STRESS_RETRY_SAMPLES: "16"
           PNP_STRESS_SEED: "17"
         run: |
-          pytest -q \
-            tests/test_runtime_error_envelope.py \
-            tests/test_resolver_classifier_golden.py \
-            tests/test_fault_injection_harness.py \
-            tests/test_fault_injection_stress.py
+          pytest -q tests/test_runtime_error_envelope.py tests/test_resolver_classifier_golden.py tests/test_fault_injection_harness.py tests/test_fault_injection_stress.py
 
   shell-editor-matrix:
     name: Shell/Editor (${{ matrix.os }} / ${{ matrix.shell }})
@@ -71,6 +67,4 @@ jobs:
       - name: Run editor/remediation validation tests
         shell: ${{ matrix.shell }}
         run: |
-          pytest -q \
-            tests/test_ops_editor_matrix.py \
-            tests/test_remediation_policy.py
+          pytest -q tests/test_ops_editor_matrix.py tests/test_remediation_policy.py
