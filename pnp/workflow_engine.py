@@ -454,7 +454,7 @@ class Orchestrator:
         prompt = utils.color("changelog↴\n", hue)
         self.out.raw(utils.wrap(prompt))
         self.out.raw(Align().center(div, "-"))
-        self.out.raw(utils.wrap(self.log_text), end="")
+        self.out.raw(utils.wrap_text(self.log_text), end="")
         if not self.args.dry_run and self.args.changelog_file:
             os.makedirs(log_file.parent, exist_ok=True)
             with open(log_file, "a+", encoding="utf-8") as f:
