@@ -1,0 +1,59 @@
+name: Nightly Stress
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Stress run count"
+        required: false
+        default: "20"
+      flake_threshold:
+        description: "Allowed flake rate (0.0-1.0)"
+        required: false
+        default: "0.05"
+      retries_per_run:
+        description: "Seeded fault iterations per run"
+        required: false
+        default: "35"
+
+jobs:
+  stress:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+
+      - name: Run seeded stress flake gate
+        run: |
+          python tools/flake_stress_gate.py \
+            --runs "${{ github.event.inputs.runs || '20' }}" \
+            --flake-threshold "${{ github.event.inputs.flake_threshold || '0.05' }}" \
+            --retries-per-run "${{ github.event.inputs.retries_per_run || '35' }}"
+
+      - name: Generate SLO report
+        run: |
+          python tools/slo_report.py \
+            --events-file pnplog/events.jsonl \
+            --report-file pnplog/slo_report.json \
+            --fail-on-thresholds
+
+      - name: Upload stress report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stress-flake-report
+          path: |
+            pnplog/stress_flake_report.json
+            pnplog/slo_report.json

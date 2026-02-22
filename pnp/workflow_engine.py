@@ -1,5 +1,5 @@
 """Workflow orchestration engine for pnp."""
-from __future__ import annotations
+
 
 from datetime import datetime
 from typing import Any, cast
@@ -9,8 +9,13 @@ import time
 import sys
 import os
 
-from tuikit.textools import strip_ansi
+from tuikit.textools import strip_ansi, Align
 
+from .error_model import (
+    FailureEvent,
+    error_policy_for,
+    resolve_failure_code,
+)
 from . import _constants as const
 from .tui import tui_runner
 from .ops import run_hook
@@ -67,6 +72,49 @@ class Orchestrator:
         self.log_dir:   Path | None = None
         self.log_text:   str | None = None
         self._temp_message_files: list[str] = []
+        self.failure_hint: FailureEvent | None = None
+
+    def _resolver_classification(self) -> tuple[str, str, str]:
+        """Best-effort resolver classification from the last git error."""
+        resolver_inst = getattr(self.resolver, "resolve", None)
+        last = getattr(resolver_inst, "last_error", None)
+        if not isinstance(last, dict):
+            return "", "", ""
+        code = str(last.get("code", "")).strip()
+        severity = str(last.get("severity", "")).strip()
+        category = ""
+        if code:
+            policy = error_policy_for(code, fallback_category="workflow")
+            category = policy["category"]
+            if not severity:
+                severity = policy["severity"]
+        return code, severity, category
+
+    def _set_failure_hint(
+        self,
+        step: str,
+        label: str,
+        result: str,
+        message: str,
+    ) -> None:
+        code, severity, category = self._resolver_classification()
+        code = resolve_failure_code(step=step, preferred_code=code)
+        policy = error_policy_for(
+            code,
+            fallback_severity=severity or "error",
+            fallback_category=category or "workflow",
+        )
+        severity = severity or policy["severity"]
+        category = category or policy["category"]
+        self.failure_hint = FailureEvent(
+            step=step,
+            label=label,
+            result=result,
+            message=message.strip(),
+            code=code,
+            severity=severity,
+            category=category,
+        )
 
     # ---------- Internal Utilities ----------
     def _cleanup_temp_message_files(self) -> None:
@@ -105,7 +153,7 @@ class Orchestrator:
         ops.rollback_delete_tag(repo, tag, self.out, step_idx)
 
     # ---------- Workflow Plan ----------
-    def _workflow_plan(self) -> tuple[list[Any], list[str]]:
+    def _workflow_plan(self) -> tuple[list[Any], list[str], list[str]]:
         steps = [
             self.find_repo,
             self.run_hooks,
@@ -124,7 +172,16 @@ class Orchestrator:
             "Publish tag",
             "Create GitHub release",
         ]
-        return steps, labels
+        keys = [
+            "repository",
+            "hooks",
+            "machete",
+            "commit",
+            "push",
+            "publish",
+            "release",
+        ]
+        return steps, labels, keys
 
     # ---------- Orchestration ----------
     def orchestrate(self) -> None:
@@ -149,7 +206,7 @@ class Orchestrator:
         If `--dry-run` is enabled, no actual changes are made
         and a reassuarance/confirmation message is shown.
         """
-        steps, labels = self._workflow_plan()
+        steps, labels, keys = self._workflow_plan()
 
         use_ui = bool(const.CI_MODE and not const.PLAIN
              and sys.stdout.isatty())
@@ -168,8 +225,30 @@ class Orchestrator:
                     if result is utils.StepResult.DONE: return None
                     if result is utils.StepResult.SKIP: continue
                     if result is utils.StepResult.FAIL:
+                        detail = ""
+                        if isinstance(msg, tuple):
+                            detail = str(msg[0])
+                        elif isinstance(msg, str):
+                            detail = msg
+                        self._set_failure_hint(
+                            step=keys[i],
+                            label=labels[i],
+                            result="fail",
+                            message=detail,
+                        )
                         sys.exit(1)
                     if result is utils.StepResult.ABORT:
+                        detail = ""
+                        if isinstance(msg, tuple):
+                            detail = str(msg[0])
+                        elif isinstance(msg, str):
+                            detail = msg
+                        self._set_failure_hint(
+                            step=keys[i],
+                            label=labels[i],
+                            result="abort",
+                            message=detail,
+                        )
                         if isinstance(msg, tuple):
                             self.out.abort(*msg)
                         else: self.out.abort(msg)
@@ -377,7 +456,7 @@ class Orchestrator:
         self.out.raw(const.PNP, end="")
         prompt = utils.color("changelog↴\n", hue)
         self.out.raw(utils.wrap(prompt))
-        self.out.raw(utils.Align().center(div, "-"))
+        self.out.raw(Align().center(div, "-"))
         self.out.raw(utils.wrap(self.log_text), end="")
         if not self.args.dry_run and self.args.changelog_file:
             os.makedirs(log_file.parent, exist_ok=True)

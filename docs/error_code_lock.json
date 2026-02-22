@@ -1,0 +1,139 @@
+{
+  "schema": "pnp.error_codes.v1",
+  "schema_version": 1,
+  "workflow_step_codes": {
+    "repository": "PNP_GIT_REPOSITORY_FAIL",
+    "hooks": "PNP_REL_HOOKS_FAIL",
+    "machete": "PNP_GIT_MACHETE_FAIL",
+    "commit": "PNP_GIT_COMMIT_FAIL",
+    "push": "PNP_NET_PUSH_FAIL",
+    "publish": "PNP_REL_PUBLISH_FAIL",
+    "release": "PNP_REL_RELEASE_FAIL"
+  },
+  "deprecated_aliases": {
+    "PNP_WORKFLOW_EXIT_NONZERO": "PNP_INT_WORKFLOW_EXIT_NONZERO",
+    "PNP_WORKFLOW_REPOSITORY_FAIL": "PNP_GIT_REPOSITORY_FAIL",
+    "PNP_WORKFLOW_HOOKS_FAIL": "PNP_REL_HOOKS_FAIL",
+    "PNP_WORKFLOW_MACHETE_FAIL": "PNP_GIT_MACHETE_FAIL",
+    "PNP_WORKFLOW_COMMIT_FAIL": "PNP_GIT_COMMIT_FAIL",
+    "PNP_WORKFLOW_PUSH_FAIL": "PNP_NET_PUSH_FAIL",
+    "PNP_WORKFLOW_PUBLISH_FAIL": "PNP_REL_PUBLISH_FAIL",
+    "PNP_WORKFLOW_RELEASE_FAIL": "PNP_REL_RELEASE_FAIL",
+    "PNP_RES_NETWORK_CONNECTIVITY": "PNP_NET_CONNECTIVITY",
+    "PNP_RES_DUBIOUS_OWNERSHIP": "PNP_GIT_DUBIOUS_OWNERSHIP",
+    "PNP_RES_INVALID_OBJECT": "PNP_GIT_INVALID_OBJECT",
+    "PNP_RES_REMOTE_URL_INVALID": "PNP_NET_REMOTE_URL_INVALID",
+    "PNP_RES_REMOTE_UNREADABLE": "PNP_NET_REMOTE_UNREADABLE",
+    "PNP_RES_UNCLASSIFIED": "PNP_GIT_UNCLASSIFIED",
+    "PNP_RES_EMPTY_STDERR": "PNP_GIT_EMPTY_STDERR",
+    "PNP_RES_AUTH_FAIL": "PNP_NET_AUTH_FAIL",
+    "PNP_RES_NON_FAST_FORWARD": "PNP_GIT_NON_FAST_FORWARD",
+    "PNP_RES_REF_CONFLICT": "PNP_GIT_REF_CONFLICT",
+    "PNP_RES_LOCK_CONTENTION": "PNP_GIT_LOCK_CONTENTION",
+    "PNP_RES_UPSTREAM_MISSING": "PNP_GIT_UPSTREAM_MISSING",
+    "PNP_RES_TLS_FAIL": "PNP_NET_TLS_FAIL",
+    "PNP_RES_TIMEOUT": "PNP_NET_TIMEOUT"
+  },
+  "error_code_policy": {
+    "PNP_INT_UNHANDLED_EXCEPTION": {
+      "severity": "error",
+      "category": "internal"
+    },
+    "PNP_INT_KEYBOARD_INTERRUPT": {
+      "severity": "warn",
+      "category": "workflow"
+    },
+    "PNP_INT_EOF_INTERRUPT": {
+      "severity": "warn",
+      "category": "workflow"
+    },
+    "PNP_INT_WORKFLOW_EXIT_NONZERO": {
+      "severity": "error",
+      "category": "workflow"
+    },
+    "PNP_GIT_REPOSITORY_FAIL": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_REL_HOOKS_FAIL": {
+      "severity": "error",
+      "category": "release"
+    },
+    "PNP_GIT_MACHETE_FAIL": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_GIT_COMMIT_FAIL": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_NET_PUSH_FAIL": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_REL_PUBLISH_FAIL": {
+      "severity": "error",
+      "category": "release"
+    },
+    "PNP_REL_RELEASE_FAIL": {
+      "severity": "error",
+      "category": "release"
+    },
+    "PNP_NET_CONNECTIVITY": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_GIT_DUBIOUS_OWNERSHIP": {
+      "severity": "warn",
+      "category": "git"
+    },
+    "PNP_GIT_INVALID_OBJECT": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_NET_REMOTE_URL_INVALID": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_NET_REMOTE_UNREADABLE": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_NET_AUTH_FAIL": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_NET_TLS_FAIL": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_NET_TIMEOUT": {
+      "severity": "error",
+      "category": "network"
+    },
+    "PNP_GIT_NON_FAST_FORWARD": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_GIT_REF_CONFLICT": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_GIT_LOCK_CONTENTION": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_GIT_UPSTREAM_MISSING": {
+      "severity": "error",
+      "category": "git"
+    },
+    "PNP_GIT_UNCLASSIFIED": {
+      "severity": "warn",
+      "category": "git"
+    },
+    "PNP_GIT_EMPTY_STDERR": {
+      "severity": "warn",
+      "category": "git"
+    }
+  }
+}

@@ -1,5 +1,5 @@
 """Unit tests for core pure utility behavior."""
-from __future__ import annotations
+
 
 from pathlib import Path
 import tempfile
@@ -57,6 +57,23 @@ class UtilsCoreTests(unittest.TestCase):
             self.assertTrue(prfx)
         finally:
             utils.bind_console(None)
+
+    def test_detect_subpackage_accepts_non_python_project_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg = root / "frontend"
+            pkg.mkdir(parents=True, exist_ok=True)
+            (pkg / "package.json").write_text("{}", encoding="utf-8")
+            detected = utils.detect_subpackage(str(pkg), str(root))
+            self.assertEqual(detected, str(pkg))
+
+    def test_detect_subpackage_returns_none_without_known_markers(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pkg = root / "misc"
+            pkg.mkdir(parents=True, exist_ok=True)
+            detected = utils.detect_subpackage(str(pkg), str(root))
+            self.assertIsNone(detected)
 
 
 if __name__ == "__main__":

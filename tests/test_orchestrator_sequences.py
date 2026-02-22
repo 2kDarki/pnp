@@ -84,6 +84,9 @@ class OrchestratorSequenceTests(unittest.TestCase):
             o.orchestrate()
         self.assertEqual(ex.exception.code, 1)
         self.assertEqual(calls, ["find_repo", "run_hooks"])
+        assert o.failure_hint is not None
+        self.assertEqual(o.failure_hint.step, "hooks")
+        self.assertEqual(o.failure_hint.code, "PNP_REL_HOOKS_FAIL")
 
     def test_skip_chain_then_abort_short_circuits(self) -> None:
         o = Orchestrator(_args(), repo_path=".")
@@ -122,6 +125,9 @@ class OrchestratorSequenceTests(unittest.TestCase):
             calls,
             ["find_repo", "run_hooks", "run_machete", "stage_and_commit", "push"],
         )
+        assert o.failure_hint is not None
+        self.assertEqual(o.failure_hint.step, "push")
+        self.assertEqual(o.failure_hint.code, "PNP_NET_PUSH_FAIL")
 
 
 if __name__ == "__main__":

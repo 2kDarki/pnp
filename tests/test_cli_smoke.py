@@ -25,7 +25,12 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("--show-config", cp.stdout)
         self.assertIn("--check-only", cp.stdout)
         self.assertIn("--check-json", cp.stdout)
+        self.assertIn("--debug-report", cp.stdout)
+        self.assertIn("--debug-report-file", cp.stdout)
         self.assertIn("--edit-message", cp.stdout)
+        self.assertIn("-e", cp.stdout)
+        self.assertIn("--tag-message", cp.stdout)
+        self.assertIn("-m", cp.stdout)
         self.assertIn("--editor", cp.stdout)
 
     def test_ci_dry_run_without_repo_exits_non_zero(self) -> None:
@@ -37,8 +42,88 @@ class CliSmokeTests(unittest.TestCase):
                 text=True,
                 cwd=tmp,
             )
+            envelope = Path(tmp) / "pnplog" / "last_error_envelope.json"
+            events = Path(tmp) / "pnplog" / "events.jsonl"
+            self.assertTrue(envelope.exists())
+            self.assertTrue(events.exists())
+            payload = json.loads(envelope.read_text(encoding="utf-8"))
+            self.assertEqual(payload["code"], "PNP_GIT_REPOSITORY_FAIL")
+            rows = [json.loads(x) for x in events.read_text(encoding="utf-8").splitlines()]
+            runtime = [r for r in rows if r.get("event_type") == "runtime_error"]
+            self.assertTrue(runtime)
+            self.assertTrue(all(r.get("run_id") for r in runtime))
+            self.assertTrue(any(r.get("step_id") == "repository" for r in runtime))
         self.assertNotEqual(cp.returncode, 0)
         self.assertIn("no git repository found", cp.stdout)
+        self.assertIn("summary: repository discovery failed", cp.stdout)
+        self.assertIn("fix: Run from a Git repository root", cp.stdout)
+
+    def test_verbose_failure_prints_advanced_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = subprocess.run(
+                [sys.executable, "-m", "pnp", ".", "--dry-run", "--ci", "--verbose"],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=tmp,
+            )
+        self.assertNotEqual(cp.returncode, 0)
+        self.assertIn("advanced details:", cp.stdout)
+        self.assertIn("code=PNP_GIT_REPOSITORY_FAIL", cp.stdout)
+
+    def test_debug_report_writes_default_bundle(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cp = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pnp",
+                    ".",
+                    "--dry-run",
+                    "--ci",
+                    "--debug-report",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=tmp,
+            )
+            log_dir = Path(tmp) / "pnplog"
+            reports = list(log_dir.glob("debug-report-*.json"))
+            self.assertTrue(reports, "expected default debug report file")
+            payload = json.loads(reports[0].read_text(encoding="utf-8"))
+            self.assertEqual(payload["tool"], "pnp")
+            self.assertTrue(payload.get("run_id"))
+            self.assertIn("git_snapshot", payload)
+            self.assertIn("resolver", payload)
+            self.assertIn("failure_envelope", payload)
+        self.assertNotEqual(cp.returncode, 0)
+
+    def test_debug_report_file_override_is_respected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            report = Path(tmp) / "bundle.json"
+            cp = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "pnp",
+                    ".",
+                    "--dry-run",
+                    "--ci",
+                    "--debug-report",
+                    "--debug-report-file",
+                    str(report),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+                cwd=tmp,
+            )
+            self.assertTrue(report.exists(), "expected debug report override file")
+            payload = json.loads(report.read_text(encoding="utf-8"))
+            self.assertEqual(payload["tool"], "pnp")
+            self.assertEqual(str(payload["target_path"]), str(Path(tmp).resolve()))
+        self.assertNotEqual(cp.returncode, 0)
 
     def test_version_exits_zero(self) -> None:
         cp = subprocess.run(

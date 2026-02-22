@@ -11,7 +11,6 @@ from tuikit import console
 
 # ======================== LOCALS =========================
 from ._constants import GOOD
-from . import utils
 
 
 INDENT          = 23  # Indented spaces for options
@@ -28,6 +27,7 @@ ALLOWED_OPTIONS = {
                 "--check-json",
                 "--show-config", "--doctor-json",
                 "--doctor-report",
+                "--debug-report", "--debug-report-file",
                 "--install-git-ext", "--uninstall-git-ext",
                 "--git-ext-dir", "--status", "-s",
                 "--sync", "-S", "--traverse", "-t"],
@@ -83,7 +83,7 @@ def help_msg(found: bool = False,
     print("    pnp --push --publish\n")
     print(wrap("pnp . --push --publish --gh-"
          + "release --gh-repo username/repo\n", 8, 4))
-    print(wrap('pnp path/to/package --push --publish --'
+    print(wrap('pnp path/to/project --push --publish --'
         'hooks "pytest -q; flake8" --interactive', 8, 4))
     print(wrap("pnp --doctor", 8, 4))
     print(wrap("pnp . --check-only --strict --push --publish", 8, 4))
@@ -138,7 +138,7 @@ def print_help(section: int = 0) -> None:
     """Prints options (Global, GitHub, or Tagging)"""
     if section == 0:  # Global options
         options = f"""{color(" 1. Global", GOOD)}
-    Path (positional)  {desc("path/to/package (default: "
+    Path (positional)  {desc("path/to/project (default: "
                        + "'.')")}
     Batch commits      {desc("-b / --batch-commit to commit "
                        + "all local repos in the current "
@@ -203,6 +203,11 @@ def print_help(section: int = 0) -> None:
                        + "actions")}
     Debug mode         {desc("-d / --debug to show full "
                        + "traceback when an error occurs")}
+    Debug bundle       {desc("--debug-report to generate a "
+                       + "sanitized support bundle in "
+                       + "pnplog")}
+    Debug bundle file  {desc("--debug-report-file FILE to "
+                       + "override debug report output path")}
     Doctor mode        {desc("--doctor to run local "
                        + "preflight audit checks (runtime, "
                        + "repo hygiene, metadata, release "
@@ -260,8 +265,8 @@ def print_help(section: int = 0) -> None:
     Mark prerelease    {desc("--gh-prerelease to mark "
                        + "release as prerelease")}
     Attach files       {desc('--gh-assets "file1, file2, ...'
-                       + '" for including files such as .whl'
-                       + " files (also supports wildcards, "
+                       + '" for including release artifacts '
+                       + "(also supports wildcards, "
                        + "e.g., *.whl)")}
         """
     else:  # Tagging options

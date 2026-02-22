@@ -1,6 +1,7 @@
 """Health and preflight checks extracted from CLI module."""
-from __future__ import annotations
 
+
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Callable
 from pathlib import Path
@@ -16,6 +17,7 @@ try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
+from .error_model import build_error_envelope
 from . import _constants as const
 from .tui import tui_runner
 from .ops import run_hook
@@ -24,6 +26,378 @@ from . import ops
 
 DOCTOR_SCHEMA = "pnp.doctor.v1"
 CHECK_SCHEMA  = "pnp.check.v1"
+
+_JS_TEST_CONFIG_MARKERS = (
+    "jest.config.js",
+    "jest.config.cjs",
+    "jest.config.mjs",
+    "vitest.config.js",
+    "vitest.config.ts",
+    "mocha.opts",
+    ".mocharc",
+)
+
+_GENERAL_TEST_DIR_NAMES = (
+    "tests",
+    "test",
+    "__tests__",
+    "spec",
+    "specs",
+)
+
+_GENERAL_TEST_FILE_PATTERNS = (
+    "test_*.py",
+    "*_test.py",
+    "*.spec.js",
+    "*.test.js",
+    "*.spec.ts",
+    "*.test.ts",
+    "*_test.go",
+    "*Test.java",
+    "*Tests.java",
+    "*_spec.rb",
+)
+
+
+def _build_error_envelope(
+    code: str,
+    severity: str,
+    category: str,
+    message: str,
+    operation: str,
+    step: str,
+    context: dict[str, object],
+    actionable: bool = True,
+    retryable: bool = False,
+    user_action_required: bool = True,
+    suggested_fix: str | None = None,
+    stderr_excerpt: str = "",
+    raw_ref: str = "",
+) -> dict[str, object]:
+    """Construct a stable machine-readable error envelope."""
+    envelope = build_error_envelope(
+        code=code,
+        severity=severity,
+        category=category,
+        message=message,
+        operation=operation,
+        step=step,
+        context=context,
+        actionable=actionable,
+        retryable=retryable,
+        user_action_required=user_action_required,
+        suggested_fix=suggested_fix or "",
+        stderr_excerpt=stderr_excerpt,
+        raw_ref=raw_ref,
+    )
+    return envelope.as_dict()
+
+
+def _doctor_error_envelope(
+    path: str,
+    checks: list[dict[str, str]],
+    failures: int,
+    warnings: int,
+) -> dict[str, object]:
+    """Build envelope for doctor JSON/report output."""
+    repo = ""
+    first_fail = next((c for c in checks if c["status"] == "fail"), None)
+    first_warn = next((c for c in checks if c["status"] == "warn"), None)
+    repo_check = next((c for c in checks if c["name"] == "repository"), None)
+    if repo_check and repo_check["status"] == "ok":
+        repo = repo_check["details"]
+
+    context = {
+        "path": os.path.abspath(path),
+        "repo": repo,
+        "ci_mode": bool(const.CI_MODE),
+        "dry_run": bool(const.DRY_RUN),
+    }
+    if failures > 0:
+        assert first_fail is not None
+        msg = f"doctor reported {failures} critical issue(s)"
+        return _build_error_envelope(
+            code="PNP_DOCTOR_CRITICAL",
+            severity="error",
+            category="preflight",
+            message=msg,
+            operation="doctor",
+            step=first_fail["name"],
+            stderr_excerpt=first_fail["details"],
+            suggested_fix="Resolve failing doctor checks and rerun --doctor.",
+            context=context,
+        )
+    if warnings > 0:
+        assert first_warn is not None
+        msg = f"doctor reported {warnings} warning(s)"
+        return _build_error_envelope(
+            code="PNP_DOCTOR_WARNINGS",
+            severity="warn",
+            category="preflight",
+            message=msg,
+            operation="doctor",
+            step=first_warn["name"],
+            stderr_excerpt=first_warn["details"],
+            suggested_fix="Review warning checks and resolve if required.",
+            context=context,
+        )
+    return _build_error_envelope(
+        code="PNP_DOCTOR_HEALTHY",
+        severity="info",
+        category="preflight",
+        message="doctor reported a healthy environment",
+        operation="doctor",
+        step="summary",
+        actionable=False,
+        retryable=False,
+        user_action_required=False,
+        suggested_fix="No action required.",
+        context=context,
+    )
+
+
+def _check_error_envelope(
+    args: argparse.Namespace,
+    findings: list[dict[str, str]],
+    blockers: int,
+    warnings_only: int,
+    exit_code: int,
+    repo: str | None,
+) -> dict[str, object]:
+    """Build envelope for check-only JSON output."""
+    first_blocker = next((f for f in findings if f["level"] == "blocker"), None)
+    first_warn = next((f for f in findings if f["level"] == "warn"), None)
+    context = {
+        "path": os.path.abspath(args.path),
+        "repo": repo or "",
+        "strict": bool(args.strict),
+        "ci_mode": bool(const.CI_MODE),
+        "dry_run": bool(const.DRY_RUN),
+    }
+    if exit_code == 20 and first_blocker:
+        return _build_error_envelope(
+            code="PNP_CHECK_BLOCKERS",
+            severity="error",
+            category="preflight",
+            message=f"check-only found {blockers} blocker(s)",
+            operation="check_only",
+            step=first_blocker["check"],
+            stderr_excerpt=first_blocker["message"],
+            suggested_fix="Resolve blockers and rerun --check-only.",
+            context=context,
+        )
+    if exit_code == 10 and first_warn:
+        return _build_error_envelope(
+            code="PNP_CHECK_WARNINGS",
+            severity="warn",
+            category="preflight",
+            message=f"check-only found {warnings_only} warning(s)",
+            operation="check_only",
+            step=first_warn["check"],
+            stderr_excerpt=first_warn["message"],
+            suggested_fix="Review warnings or run with --strict to enforce.",
+            context=context,
+        )
+    return _build_error_envelope(
+        code="PNP_CHECK_CLEAN",
+        severity="info",
+        category="preflight",
+        message="check-only found no blockers",
+        operation="check_only",
+        step="summary",
+        actionable=False,
+        retryable=False,
+        user_action_required=False,
+        suggested_fix="No action required.",
+        context=context,
+    )
+
+
+def _check_pyproject(path: Path) -> tuple[str, str]:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid pyproject.toml: {e}"
+
+    project = data.get("project", {})
+    if isinstance(project, dict):
+        name = project.get("name")
+        version = project.get("version")
+        if name and version:
+            return "ok", f"pyproject project metadata: {name} {version}"
+        if name:
+            return "ok", f"pyproject project metadata: {name}"
+    return "ok", "pyproject.toml detected"
+
+
+def _check_package_json(path: Path) -> tuple[str, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid package.json: {e}"
+
+    if not isinstance(data, dict):
+        return "warn", "invalid package.json: expected JSON object"
+
+    name = data.get("name")
+    version = data.get("version")
+    if isinstance(name, str) and name.strip():
+        if isinstance(version, str) and version.strip():
+            return "ok", f"package.json metadata: {name} {version}"
+        return "ok", f"package.json metadata: {name}"
+    return "warn", "package.json missing required key: name"
+
+
+def _check_go_mod(path: Path) -> tuple[str, str]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception as e:
+        return "warn", f"unable to read go.mod: {e}"
+
+    for line in text.splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("//"):
+            continue
+        if raw.startswith("module "):
+            module = raw.removeprefix("module ").strip()
+            if module:
+                return "ok", f"go module: {module}"
+            return "warn", "go.mod has empty module directive"
+        break
+    return "warn", "go.mod missing module directive"
+
+
+def _check_cargo_toml(path: Path) -> tuple[str, str]:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid Cargo.toml: {e}"
+
+    package = data.get("package")
+    workspace = data.get("workspace")
+    if isinstance(package, dict):
+        name = package.get("name")
+        version = package.get("version")
+        if name and version:
+            return "ok", f"cargo package metadata: {name} {version}"
+        if name:
+            return "ok", f"cargo package metadata: {name}"
+        return "warn", "Cargo.toml [package] missing key: name"
+
+    if isinstance(workspace, dict):
+        return "ok", "cargo workspace manifest detected"
+    return "ok", "Cargo.toml detected"
+
+
+def _check_pom_xml(path: Path) -> tuple[str, str]:
+    try:
+        root = ET.fromstring(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid pom.xml: {e}"
+
+    def text(tag: str) -> str:
+        namespaces = (
+            f".//{{http://maven.apache.org/POM/4.0.0}}{tag}",
+            f".//{tag}",
+        )
+        for query in namespaces:
+            node = root.find(query)
+            if node is not None and node.text and node.text.strip():
+                return node.text.strip()
+        return ""
+
+    artifact = text("artifactId")
+    version = text("version")
+    if not artifact:
+        return "warn", "pom.xml missing required key: artifactId"
+    if version:
+        return "ok", f"maven metadata: {artifact} {version}"
+    return "ok", f"maven metadata: {artifact}"
+
+
+def _check_composer_json(path: Path) -> tuple[str, str]:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid composer.json: {e}"
+
+    if not isinstance(data, dict):
+        return "warn", "invalid composer.json: expected JSON object"
+    name = data.get("name")
+    if isinstance(name, str) and name.strip():
+        return "ok", f"composer metadata: {name}"
+    return "ok", "composer.json detected"
+
+
+def _check_project_toml(path: Path) -> tuple[str, str]:
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return "warn", f"invalid Project.toml: {e}"
+
+    name = data.get("name")
+    version = data.get("version")
+    if isinstance(name, str) and name.strip():
+        if isinstance(version, str) and version.strip():
+            return "ok", f"Project.toml metadata: {name} {version}"
+        return "ok", f"Project.toml metadata: {name}"
+    return "ok", "Project.toml detected"
+
+
+_METADATA_CHECKERS: dict[str, Callable[[Path], tuple[str, str]]] = {
+    "pyproject.toml": _check_pyproject,
+    "package.json": _check_package_json,
+    "go.mod": _check_go_mod,
+    "Cargo.toml": _check_cargo_toml,
+    "pom.xml": _check_pom_xml,
+    "composer.json": _check_composer_json,
+    "Project.toml": _check_project_toml,
+}
+
+
+def _metadata_check(pkg_root: str) -> tuple[str, str]:
+    """Return (status, details) for project metadata detection."""
+    root = Path(pkg_root)
+    markers = [
+        marker
+        for marker in utils.PROJECT_MARKERS
+        if (root / marker).exists()
+    ]
+    if not markers:
+        return "warn", "no known project manifest detected"
+
+    warnings: list[str] = []
+    details: list[str] = []
+
+    for marker in markers:
+        checker = _METADATA_CHECKERS.get(marker)
+        if checker is None:
+            details.append(f"{marker} detected")
+            continue
+        status, detail = checker(root / marker)
+        if status == "warn":
+            warnings.append(detail)
+        else:
+            details.append(detail)
+
+    if warnings:
+        return "warn", "; ".join(warnings)
+    return "ok", "; ".join(details)
+
+
+def _has_test_footprint(pkg_root: str) -> bool:
+    """Detect test footprint using cross-language conventions."""
+    root = Path(pkg_root)
+    if any((root / d).is_dir() for d in _GENERAL_TEST_DIR_NAMES):
+        return True
+
+    if any((root / name).exists() for name in _JS_TEST_CONFIG_MARKERS):
+        return True
+
+    for pattern in _GENERAL_TEST_FILE_PATTERNS:
+        if list(root.rglob(pattern)):
+            return True
+    return False
 
 
 def _find_repo_noninteractive(path: str) -> str | None:
@@ -365,47 +739,17 @@ def run_doctor(path: str, out: utils.Output,
         if repo:
             detected = utils.detect_subpackage(path, repo)
             pkg_root = detected or repo
-            pyproject = Path(pkg_root) / "pyproject.toml"
-            if not pyproject.exists():
+            status, detail = _metadata_check(pkg_root)
+            add_check("project_metadata", status, detail)
+            if status == "warn":
                 warnings += 1
-                add_check("project_metadata", "warn",
-                    "missing pyproject.toml")
-                out.warn(f"Missing pyproject.toml in {utils.pathit(pkg_root)}", step_idx=8)
+                out.warn(detail, step_idx=8)
                 pause_step()
                 ui.finish(8, utils.StepResult.ABORT)
             else:
-                try:
-                    data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-                except Exception as e:
-                    warnings += 1
-                    add_check("project_metadata", "warn",
-                        f"invalid pyproject.toml: {e}")
-                    out.warn(f"Invalid pyproject.toml: {e}",
-                        step_idx=8)
-                    pause_step()
-                    ui.finish(8, utils.StepResult.ABORT)
-                else:
-                    project   = data.get("project", {})
-                    build_sys = data.get("build-system", {})
-                    missing_meta: list[str] = []
-                    if not project.get("name"):
-                        missing_meta.append("project.name")
-                    if not project.get("version"):
-                        missing_meta.append("project.version")
-                    if not build_sys.get("build-backend"):
-                        missing_meta.append("build-system.build-backend")
-                    if missing_meta:
-                        warnings += 1
-                        add_check("project_metadata", "warn", "missing metadata: " + ", ".join(missing_meta))
-                        out.warn("Missing metadata: " + ", ".join(missing_meta), step_idx=8)
-                        pause_step()
-                        ui.finish(8, utils.StepResult.ABORT)
-                    else:
-                        meta_detail = f"{project.get('name')} {project.get('version')}"
-                        add_check("project_metadata", "ok", meta_detail)
-                        out.success(f"Metadata OK ({meta_detail})", step_idx=8)
-                        pause_step()
-                        ui.finish(8, utils.StepResult.OK)
+                out.success(f"Metadata OK ({detail})", step_idx=8)
+                pause_step()
+                ui.finish(8, utils.StepResult.OK)
         else:
             warnings += 1
             add_check("project_metadata", "warn",
@@ -416,13 +760,7 @@ def run_doctor(path: str, out: utils.Output,
 
         ui.start(9)
         if pkg_root:
-            tests_dir = Path(pkg_root) / "tests"
-            has_tests = tests_dir.is_dir()
-            if not has_tests:
-                for root, _, files in os.walk(pkg_root):
-                    if any(f.startswith("test_") and f.endswith(".py") for f in files):
-                        has_tests = True
-                        break
+            has_tests = _has_test_footprint(pkg_root)
             if has_tests:
                 add_check("test_footprint", "ok", "tests detected")
                 out.success("Test footprint detected", step_idx=9)
@@ -432,7 +770,7 @@ def run_doctor(path: str, out: utils.Output,
                 warnings += 1
                 add_check("test_footprint", "warn",
                     "no tests found")
-                out.warn("No tests directory or test_*.py files found", step_idx=9)
+                out.warn("No conventional test footprint found", step_idx=9)
                 pause_step()
                 ui.finish(9, utils.StepResult.ABORT)
         else:
@@ -467,6 +805,7 @@ def run_doctor(path: str, out: utils.Output,
             "healthy": failures == 0 and warnings == 0,
         },
         "checks": checks,
+        "error_envelope": _doctor_error_envelope(path, checks, failures, warnings),
     }
     if report_file:
         try:
@@ -619,6 +958,14 @@ def run_check_only(args: argparse.Namespace,
         emit.success("check-only summary: no blockers found")
 
     if args.check_json:
+        envelope = _check_error_envelope(
+            args=args,
+            findings=findings,
+            blockers=blockers,
+            warnings_only=warnings_only,
+            exit_code=code,
+            repo=repo,
+        )
         payload = {
             "schema": CHECK_SCHEMA,
             "schema_version": 1,
@@ -631,6 +978,7 @@ def run_check_only(args: argparse.Namespace,
                 "warnings": warnings_only,
             },
             "findings": findings,
+            "error_envelope": envelope,
         }
         out.raw(json.dumps(payload, indent=2))
     return code

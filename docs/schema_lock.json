@@ -8,7 +8,8 @@
       "generated_at",
       "path",
       "summary",
-      "checks"
+      "checks",
+      "error_envelope"
     ],
     "required_summary": [
       "critical",
@@ -19,6 +20,21 @@
       "name",
       "status",
       "details"
+    ],
+    "required_envelope": [
+      "code",
+      "severity",
+      "category",
+      "actionable",
+      "message",
+      "operation",
+      "step",
+      "stderr_excerpt",
+      "raw_ref",
+      "retryable",
+      "user_action_required",
+      "suggested_fix",
+      "context"
     ]
   },
   "check": {
@@ -31,7 +47,8 @@
       "path",
       "strict",
       "summary",
-      "findings"
+      "findings",
+      "error_envelope"
     ],
     "required_summary": [
       "exit_code",
@@ -42,6 +59,21 @@
       "level",
       "check",
       "message"
+    ],
+    "required_envelope": [
+      "code",
+      "severity",
+      "category",
+      "actionable",
+      "message",
+      "operation",
+      "step",
+      "stderr_excerpt",
+      "raw_ref",
+      "retryable",
+      "user_action_required",
+      "suggested_fix",
+      "context"
     ]
   }
 }

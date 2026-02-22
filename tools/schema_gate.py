@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """CI gate for JSON schema contract compatibility."""
-from __future__ import annotations
+
 
 from pathlib import Path
 import subprocess
@@ -41,6 +41,8 @@ def _validate_payload(name: str, payload: dict[str, object], lock: dict[str, obj
         "required_summary"]]  # type: ignore[index]
     required_item = [str(k) for k in lock[
         "required_item"]]  # type: ignore[index]
+    required_envelope = [str(k) for k in lock.get(
+        "required_envelope", [])]  # type: ignore[arg-type]
     expected_schema = str(lock["schema"])  # type: ignore[index]
     expected_schema_version = int(lock["schema_version"])  # type: ignore[index]
 
@@ -76,6 +78,15 @@ def _validate_payload(name: str, payload: dict[str, object], lock: dict[str, obj
             for key in required_item:
                 if key not in item:
                     issues.append(f"{name}: {items_key}[{i}] missing key '{key}'")
+
+    envelope = payload.get("error_envelope")
+    if required_envelope:
+        if not isinstance(envelope, dict):
+            issues.append(f"{name}: error_envelope is not an object")
+        else:
+            for key in required_envelope:
+                if key not in envelope:
+                    issues.append(f"{name}: error_envelope missing key '{key}'")
     return issues
 
 

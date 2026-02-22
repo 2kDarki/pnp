@@ -1,5 +1,5 @@
 """Helper functions extracted from cli entrypoint."""
-from __future__ import annotations
+
 
 from pathlib import Path
 import subprocess
@@ -13,6 +13,7 @@ import os
 import re
 
 from . import _constants as const
+from . import telemetry
 from . import utils
 
 
@@ -59,7 +60,11 @@ def run_machete(repo: str, dry_run: bool,
             out.info(const.DRYRUN + "would run: "
                + " ".join(cmd), step_idx=step_idx)
             continue
-        cp = run_command(cmd, cwd=repo)
+        utils.suspend_console()
+        try:
+            cp = run_command(cmd, cwd=repo)
+        finally:
+            utils.resume_console()
         if cp.returncode != 0:
             detail = cp.stderr.strip() or cp.stdout.strip() \
                   or f"git machete {label} failed"
@@ -101,23 +106,27 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     utils.transmit(m, fg=const.GOOD)
     if dryrun: return 0
 
-    if "pytest" in cmd: print()
+    utils.suspend_console()
+    try:
+        if "pytest" in cmd: print()
 
-    proc   = subprocess.run(cmd, cwd=cwd, shell=True,
-             check=False, text=True, capture_output=capture)
-    code   = proc.returncode
-    stdout = proc.stdout
-    stderr = proc.stderr
-    if not capture or stderr: print()
-    if code != 0:
-        err = f"[{code}]: {cmd} {stderr}"
-        raise RuntimeError(err)
+        proc   = subprocess.run(cmd, cwd=cwd, shell=True,
+                 check=False, text=True, capture_output=capture)
+        code   = proc.returncode
+        stdout = proc.stdout
+        stderr = proc.stderr
+        if not capture or stderr: print()
+        if code != 0:
+            err = f"[{code}]: {cmd} {stderr}"
+            raise RuntimeError(err)
 
-    if capture:
-        for line in stdout.splitlines():
-            print(line)
-            time.sleep(0.005)
-        print()
+        if capture:
+            for line in stdout.splitlines():
+                print(line)
+                time.sleep(0.005)
+            print()
+    finally:
+        utils.resume_console()
     return code
 
 
@@ -330,8 +339,34 @@ def rollback_unstage(path: str, out: utils.Output,
     )
     if cp.returncode == 0:
         out.warn("rollback: unstaged index after failure", step_idx=step_idx)
+        verify = subprocess.run(
+            ["git", "-C", path, "diff", "--cached", "--name-only"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if verify.returncode == 0 and not verify.stdout.strip():
+            out.warn("rollback verified: index is clean", step_idx=step_idx)
+            telemetry.emit_event(
+                event_type="rollback_verification",
+                step_id="commit",
+                payload={"target": "index", "verified": True},
+            )
+        else:
+            out.warn("rollback verification failed: staged changes remain",
+                     step_idx=step_idx)
+            telemetry.emit_event(
+                event_type="rollback_verification",
+                step_id="commit",
+                payload={"target": "index", "verified": False},
+            )
     else:
         out.warn("rollback failed: unable to unstage index", step_idx=step_idx)
+        telemetry.emit_event(
+            event_type="rollback_verification",
+            step_id="commit",
+            payload={"target": "index", "verified": False},
+        )
 
 
 def rollback_delete_tag(repo: str, tag: str, out: utils.Output,
@@ -345,8 +380,37 @@ def rollback_delete_tag(repo: str, tag: str, out: utils.Output,
     )
     if cp.returncode == 0:
         out.warn(f"rollback: removed local tag {tag!r}", step_idx=step_idx)
+        verify = subprocess.run(
+            ["git", "-C", repo, "tag", "--list", tag],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if verify.returncode == 0 and not verify.stdout.strip():
+            out.warn(f"rollback verified: local tag {tag!r} absent",
+                     step_idx=step_idx)
+            telemetry.emit_event(
+                event_type="rollback_verification",
+                step_id="publish",
+                payload={"target": "tag", "tag": tag, "verified": True},
+            )
+        else:
+            out.warn(
+                f"rollback verification failed: local tag {tag!r} still present",
+                step_idx=step_idx,
+            )
+            telemetry.emit_event(
+                event_type="rollback_verification",
+                step_id="publish",
+                payload={"target": "tag", "tag": tag, "verified": False},
+            )
     else:
         out.warn(
             f"rollback failed: unable to remove local tag {tag!r}",
             step_idx=step_idx,
+        )
+        telemetry.emit_event(
+            event_type="rollback_verification",
+            step_id="publish",
+            payload={"target": "tag", "tag": tag, "verified": False},
         )

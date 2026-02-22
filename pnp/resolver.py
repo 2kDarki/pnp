@@ -11,7 +11,6 @@ Design goals:
 """
 # ======================= STANDARDS =======================
 from subprocess import CompletedProcess, run
-from dataclasses import dataclass, asdict
 from typing import Callable, Iterable
 from pathlib import Path
 import logging as log
@@ -22,33 +21,29 @@ import os
 import re
 
 # ======================== LOCALS =========================
+from .resolver_classifier import (
+    ErrorClassification,
+    classify as classify_error,
+    classify_stderr as classifier_classify_stderr,
+    reset_telemetry as reset_classifier_telemetry,
+    rule_conflict_count as classifier_rule_conflict_count,
+    unknown_classification_count as classifier_unknown_count,
+)
+from .resolver_policy import PolicyDecision, decide as apply_policy
 from .utils import transmit, any_in, color, wrap, Output
 from .utils import StepResult, wrap_text, intent, auto
+from .remediation_policy import can_run_remediation
 from ._constants import I, BAD, INFO, CURSOR
 from . import _constants as const
+from . import telemetry
 
 
 # Configure module logger
 logger = log.getLogger("pnp.resolver")
 logger.setLevel(log.DEBUG)
-
-SEV_INFO     = "info"
-SEV_WARN     = "warn"
-SEV_ERROR    = "error"
-SEV_CRITICAL = "critical"
-
-
-@dataclass(frozen=True)
-class ErrorClassification:
-    code: str
-    severity: str
-    handler: str
-
-    def as_dict(self) -> dict[str, str]: return asdict(self)
-
-
 def configure_logger(log_dir: Path) -> None:
     """Configure resolver logger once per process."""
+    telemetry.init_event_stream(Path(log_dir))
     if logger.handlers: return
     os.makedirs(log_dir, exist_ok=True)
     pnp_errors   = log_dir / "debug.log"
@@ -100,6 +95,24 @@ def _safe_copytree(src: Path, dst: Path,
         logger.exception(exc, src, dst); raise
 
 
+def _emit_remediation_event(
+    action: str,
+    outcome: str,
+    details: dict[str, str] | None = None,
+) -> None:
+    """Write structured remediation event for observability."""
+    payload: dict[str, object] = {
+        "action": action,
+        "outcome": outcome,
+        "details": details or {},
+    }
+    telemetry.emit_event(
+        event_type="remediation",
+        step_id=action,
+        payload=payload,
+    )
+
+
 class Handlers:
     """
     Instance with callable interface.
@@ -123,122 +136,95 @@ class Handlers:
         self.warn    = out.warn
         self.abort   = out.abort
         self.last_error: dict[str, str] | None = None
+        self.last_decision: PolicyDecision | None = None
 
     def classify(self, stderr: str) -> ErrorClassification:
         """Classify git stderr into stable code/severity/handler."""
-        if not stderr:
-            return ErrorClassification(
-                code="PNP_RES_EMPTY_STDERR",
-                severity=SEV_WARN,
-                handler="fallback",
-            )
-        s = stderr.lower()
-        internet_err = (
-            "no address associated with hostname",
-            "could not resolve host",
-            "software caused connection abort",
-            "failed to connect",
-            "connect to",
-        )
-        invd_obj_err = (
-            "invalid object",
-            "broken pipe",
-            "has null sha1",
-            "object corrupt",
-            "unexpected diff status a",
-            "is empty fatal:",
-        )
-        if any_in(internet_err, eq=s):
-            return ErrorClassification(
-                code="PNP_RES_NETWORK_CONNECTIVITY",
-                severity=SEV_ERROR,
-                handler="internet_con_err",
-            )
-        if "dubious ownership" in s:
-            return ErrorClassification(
-                code="PNP_RES_DUBIOUS_OWNERSHIP",
-                severity=SEV_WARN,
-                handler="dubious_ownership",
-            )
-        if any_in(invd_obj_err, eq=s):
-            return ErrorClassification(
-                code="PNP_RES_INVALID_OBJECT",
-                severity=SEV_ERROR,
-                handler="invalid_object",
-            )
-        if "could not read from remote" in s:
-            issue = self._classify_remote_issue(s)
-            if issue == 2:
-                return ErrorClassification(
-                    code="PNP_RES_REMOTE_URL_INVALID",
-                    severity=SEV_ERROR,
-                    handler="internet_con_err",
-                )
-            return ErrorClassification(
-                code="PNP_RES_REMOTE_UNREADABLE",
-                severity=SEV_ERROR,
-                handler="missing_remote",
-            )
-        return ErrorClassification(
-            code="PNP_RES_UNCLASSIFIED",
-            severity=SEV_WARN,
-            handler="fallback",
+        return classify_error(stderr)
+
+    def decide(self, stderr: str, cwd: str) -> PolicyDecision:
+        """Dispatch and return a typed policy decision."""
+        cls = self.classify(stderr)
+        self.last_error = cls.as_dict()
+        def _on_unhandled() -> None:
+            print()
+            logger.warning("Unhandled git stderr pattern. "
+                           "Showing normalized message.\n")
+
+        def _on_decision(decision: PolicyDecision) -> None:
+            self.last_decision = decision
+
+        return apply_policy(
+            classification=cls,
+            stderr=stderr,
+            cwd=cwd,
+            remediation=self,
+            on_unhandled=_on_unhandled,
+            on_decision=_on_decision,
         )
 
     def __call__(self, stderr: str, cwd: str) -> StepResult:
-        """Dispatch based on stderr content."""
-        cls = self.classify(stderr)
-        self.last_error = cls.as_dict()
-        s = stderr.lower()
+        """Backward-compatible callable interface."""
+        return self.decide(stderr, cwd).result
 
-        if cls.handler == "internet_con_err":
-            error_type = 2 if cls.code == "PNP_RES_REMOTE_URL_INVALID" else 1
-            self.internet_con_err(stderr, error_type)
-            return StepResult.FAIL
-        if cls.handler == "dubious_ownership":
-            return self.dubious_ownership(cwd)
-        if cls.handler == "invalid_object":
-            return self.invalid_object(s, cwd)
-        if cls.handler == "missing_remote":
-            return self.missing_remote(s, cwd)
-        if cls.code == "PNP_RES_EMPTY_STDERR":
-            logger.debug("Empty stderr passed to handler")
-            return StepResult.FAIL
+    def _allow_remediation(self, action: str) -> tuple[bool, str]:
+        allowed, reason = can_run_remediation(
+            action=action,
+            ci_mode=bool(const.CI_MODE),
+            autofix=bool(const.AUTOFIX),
+            interactive=not bool(const.CI_MODE),
+        )
+        outcome = "allowed" if allowed else "blocked"
+        detail = {"reason": reason} if reason else {}
+        _emit_remediation_event(action, outcome, detail)
+        return allowed, reason
 
-        # fallback: log and bubble up
-        print()
-        logger.warning("Unhandled git stderr pattern. "
-                       "Showing normalized message.\n")
-        return StepResult.FAIL
-
-    def _classify_remote_issue(self, s: str) -> int:
-        """Return error type for remote/internet issues"""
-        if "could not read from remote" in s:
-            url_pattern = re.compile(r"https?://[^\s']+")
-            if url_pattern.search(s):
-                return 2  # Invalid/non-existent remote URL
-        return 0
+    def _simulate_remediation(
+        self,
+        action: str,
+        result: StepResult,
+        note: str = "",
+    ) -> tuple[bool, StepResult]:
+        if not const.DRY_RUN:
+            return False, result
+        msg = f"{const.DRYRUN}simulate remediation: {action}"
+        self.prompt(msg)
+        detail: dict[str, str] = {"result": str(result.value)}
+        if note:
+            detail["note"] = note
+        _emit_remediation_event(action, "simulated", detail)
+        return True, result
 
     def dubious_ownership(self, cwd: str) -> StepResult:
         """Handle 'dubious ownership' by asking to add safe.directory to git config"""
+        allowed, reason = self._allow_remediation("git_safe_directory")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
         prompt = wrap("git reported dubious ownership "
                  f"for repository at {cwd!r}. Mark this "
                  "directory as safe? [y/n]")
-        if const.CI_MODE and not const.AUTOFIX:
-            logger.info("CI mode: refusing to change global"
-                        " git config")
-            return StepResult.FAIL
 
         if not const.AUTOFIX and not intent(prompt, "y", "return"):
             msg = "user declined to mark as safe directory"
             self.abort(msg)
 
+        simulated, result = self._simulate_remediation(
+            action="git_safe_directory",
+            result=StepResult.OK,
+            note="would run git config --global --add safe.directory",
+        )
+        if simulated:
+            return result
+
         cmd = ["git", "config", "--global", "--add",
                "safe.directory", cwd]
         cp = _run(cmd, cwd)
         if cp.returncode == 0:
+            _emit_remediation_event("git_safe_directory", "success")
             self.success("marked directory as safe")
             return StepResult.OK
+        _emit_remediation_event("git_safe_directory", "failed")
         self.warn("failed to mark safe directory; see git "
                   "output for details")
         return StepResult.FAIL
@@ -320,11 +306,27 @@ class Handlers:
 
             opt = input(CURSOR).strip().lower(); print()
         else:
-            self.prompt(auto("attempting hard auto-repair to"
-                            f" resolve {issue}"))
-            opt = "2"
+            can_reset, _ = self._allow_remediation("destructive_reset")
+            if can_reset:
+                self.prompt(auto("attempting hard auto-repair to"
+                                f" resolve {issue}"))
+                opt = "2"
+            else:
+                self.prompt(auto("destructive reset disabled by policy; "
+                                "skipping and continuing"))
+                opt = "4"
 
         if opt == "1":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="open_shell_manual",
+                result=StepResult.RETRY,
+            )
+            if simulated:
+                return result
             self.info("opening subshell...")
 
             # try to open interactive shell
@@ -336,20 +338,37 @@ class Handlers:
                 return StepResult.FAIL
             _run([os_shell], cwd, check=False,
                 capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
             return StepResult.RETRY
         if opt == "2":
+            allowed, reason = self._allow_remediation("destructive_reset")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="destructive_reset",
+                result=StepResult.RETRY,
+            )
+            if simulated:
+                return result
             if "null sha1" in stderr:
                 _run(["rm", ".git/index"], cwd, check=True)
             try:
                 _run(["git", "reset"], cwd, check=True)
                 _run(["git", "add", "."], cwd, check=True)
+                _emit_remediation_event("destructive_reset", "success")
                 return StepResult.RETRY
             except Exception as e:
                 logger.exception("auto-repair failed: %s", e)
+                _emit_remediation_event("destructive_reset", "failed")
                 self.warn("auto-repair failed — manual "
                           "intervention may be required")
                 return StepResult.FAIL
         if opt == "3":
+            allowed, reason = self._allow_remediation("safe_fix_network")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             # Not implemented. It is supposed to
             # (1) create a backup of the project
             # (2) delete the project
@@ -359,23 +378,39 @@ class Handlers:
             self.warn("ERROR: method not implemented")
             return StepResult.FAIL
         if opt == "4":
+            allowed, reason = self._allow_remediation("skip_continue")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="skip_continue",
+                result=StepResult.OK,
+            )
+            if simulated:
+                return result
             self.prompt("skipping commit and continuing")
+            _emit_remediation_event("skip_continue", "success")
             return StepResult.OK
 
         # default: abort
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
         self.abort("aborting as requested")
         return StepResult.FAIL
 
-    def repo_corruption(self, cwd: Path) -> StepResult:
+    def repo_corruption(self, cwd: str) -> StepResult:
         """
         Handle remote / non-fast-forward conflicts by making
         a safe backup, synchronizing to remote state, and
         restoring local changes on top
         """
+        cwd_path = Path(cwd)
         # Determine current branch
         try:
             cp = _run(["git", "branch", "--show-current"],
-                 cwd=str(cwd))
+                 cwd=str(cwd_path))
             branch = (cp.stdout or "").strip()
         except Exception:
             self.warn("could not determine current branch")
@@ -384,7 +419,7 @@ class Handlers:
             self.warn("no branch detected")
             return StepResult.FAIL
 
-        backup_dir = _timestamped_backup_name(Path(cwd))
+        backup_dir = _timestamped_backup_name(cwd_path)
 
         # Step 1: backup local (exclude .git)
         try:
@@ -392,7 +427,7 @@ class Handlers:
                         f"{backup_dir}")
             ignore = shutil.ignore_patterns(".git",
                      ".github", "__pycache__")
-            _safe_copytree(cwd, backup_dir, ignore=ignore)
+            _safe_copytree(cwd_path, backup_dir, ignore=ignore)
         except Exception:
             self.warn("backup failed")
             return StepResult.FAIL
@@ -401,10 +436,10 @@ class Handlers:
         try:
             self.warn("fetching remote and resetting local "
                       "branch to origin/" + branch)
-            _run(["git", "fetch", "origin"], str(cwd),
+            _run(["git", "fetch", "origin"], str(cwd_path),
                  check=True)
             _run(["git", "reset", "--hard",
-                "origin/" + branch], str(cwd), check=True)
+                "origin/" + branch], str(cwd_path), check=True)
         except Exception:
             self.prompt("could not sync with remote. "
                       + "Attempting to restore backup...")
@@ -414,7 +449,7 @@ class Handlers:
                 # copying back
                 for item in backup_dir.iterdir():
                     if item.name.startswith("."): continue
-                    dest = cwd / item.name
+                    dest = cwd_path / item.name
                     if item.is_dir():
                         shutil.copytree(item, dest,
                             dirs_exist_ok=True)
@@ -432,7 +467,7 @@ class Handlers:
                         "changes from backup...")
             for item in backup_dir.iterdir():
                 if item.name.startswith("."): continue
-                dest = cwd / item.name
+                dest = cwd_path / item.name
                 if item.is_dir():
                     shutil.copytree(item, dest,
                         dirs_exist_ok=True)
@@ -443,7 +478,7 @@ class Handlers:
 
         # Step 4: stage restored changes
         try:
-            _run(["git", "add", "."], cwd=str(cwd),
+            _run(["git", "add", "."], cwd=str(cwd_path),
                 check=True)
         except Exception:
             self.warn("failed to stage restored files")
@@ -463,7 +498,7 @@ class Handlers:
 
         try:
             _run(["git", "commit", "-m", commit_msg],
-                cwd=str(cwd), check=True)
+                cwd=str(cwd_path), check=True)
             self.success("restored local changes "
                          "committed on top of remote "
                          "state")
@@ -474,6 +509,244 @@ class Handlers:
             self.warn("committing restored changes failed. "
                       "Manual fix required")
             return StepResult.FAIL
+
+    def lock_contention(self, stderr: str, cwd: str) -> StepResult:
+        """Handle stale git lock-file contention when safe to clean."""
+        self.warn("git lock contention detected")
+        allowed, reason = self._allow_remediation("stale_lock_cleanup")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        repo = Path(cwd)
+        lock_candidates: list[Path] = []
+        for match in re.findall(r"([./A-Za-z0-9_-]+\.lock)", stderr):
+            token = match.strip().strip("'\"")
+            if token.startswith(".git/"):
+                lock_candidates.append(repo / token)
+            elif token.startswith("/"):
+                lock_candidates.append(Path(token))
+        lock_candidates.extend(
+            [
+                repo / ".git" / "index.lock",
+                repo / ".git" / "shallow.lock",
+                repo / ".git" / "packed-refs.lock",
+                repo / ".git" / "HEAD.lock",
+                repo / ".git" / "config.lock",
+            ]
+        )
+        seen: set[str] = set()
+        unique_candidates: list[Path] = []
+        for candidate in lock_candidates:
+            key = str(candidate.resolve()) if candidate.exists() else str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_candidates.append(candidate)
+        lock: Path | None = None
+        for candidate in unique_candidates:
+            if candidate.exists() and candidate.suffix == ".lock":
+                lock = candidate
+                break
+        if lock is None:
+            self.warn("no known stale lock file found to clean")
+            _emit_remediation_event(
+                "stale_lock_cleanup",
+                "failed",
+                {"reason": "no lock file detected"},
+            )
+            return StepResult.FAIL
+        git_dir = (repo / ".git").resolve()
+        try:
+            lock_resolved = lock.resolve()
+        except Exception:
+            lock_resolved = lock
+        if git_dir not in lock_resolved.parents:
+            self.warn("refusing lock cleanup outside repository .git directory")
+            _emit_remediation_event(
+                "stale_lock_cleanup",
+                "failed",
+                {"path": str(lock), "reason": "outside .git"},
+            )
+            return StepResult.FAIL
+        simulated, result = self._simulate_remediation(
+            action="stale_lock_cleanup",
+            result=StepResult.RETRY,
+            note=f"would remove {lock}",
+        )
+        if simulated:
+            return result
+        try:
+            if lock.exists():
+                lock.unlink()
+                _emit_remediation_event(
+                    "stale_lock_cleanup",
+                    "success",
+                    {"path": str(lock)},
+                )
+                return StepResult.RETRY
+            _emit_remediation_event(
+                "stale_lock_cleanup",
+                "failed",
+                {"path": str(lock), "reason": "lock file not found"},
+            )
+            self.warn("lock file not found for cleanup")
+            return StepResult.FAIL
+        except Exception as e:
+            _emit_remediation_event(
+                "stale_lock_cleanup",
+                "failed",
+                {"path": str(lock), "reason": str(e)},
+            )
+            self.warn("failed to clean stale lock")
+            return StepResult.FAIL
+
+    def upstream_missing(self, stderr: str, cwd: str) -> StepResult:
+        """Handle missing upstream branch by setting tracking branch."""
+        self.warn("branch has no upstream tracking configuration")
+        allowed, reason = self._allow_remediation("set_upstream_tracking")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        simulated, result = self._simulate_remediation(
+            action="set_upstream_tracking",
+            result=StepResult.RETRY,
+            note="would run git push --set-upstream <remote> <branch>",
+        )
+        if simulated:
+            return result
+        try:
+            cp_branch = _run(
+                ["git", "branch", "--show-current"],
+                cwd,
+            )
+            branch = (cp_branch.stdout or "").strip()
+            if not branch:
+                self.warn("could not determine current branch for upstream setup")
+                _emit_remediation_event(
+                    "set_upstream_tracking",
+                    "failed",
+                    {"reason": "empty current branch"},
+                )
+                return StepResult.FAIL
+            cp_remote = _run(["git", "remote"], cwd)
+            remotes = [r.strip() for r in (cp_remote.stdout or "").splitlines() if r.strip()]
+            remote = remotes[0] if remotes else "origin"
+            cp = _run(
+                ["git", "push", "--set-upstream", remote, branch],
+                cwd,
+            )
+            if cp.returncode == 0:
+                _emit_remediation_event(
+                    "set_upstream_tracking",
+                    "success",
+                    {"remote": remote, "branch": branch},
+                )
+                return StepResult.RETRY
+            _emit_remediation_event(
+                "set_upstream_tracking",
+                "failed",
+                {"remote": remote, "branch": branch},
+            )
+            self.warn("failed to set upstream tracking branch")
+            return StepResult.FAIL
+        except Exception as e:
+            _emit_remediation_event(
+                "set_upstream_tracking",
+                "failed",
+                {"reason": str(e)},
+            )
+            self.warn("upstream setup failed")
+            return StepResult.FAIL
+
+    def auth_failure(self, stderr: str, cwd: str) -> StepResult:
+        """Handle remote authentication failures with guided options."""
+        self.warn("remote authentication failed")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: interactive auth remediation unavailable")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Open GitHub token page",
+                "2": "Open shell to fix auth manually",
+                "3": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "3"
+            print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("open_token_page")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            self.prompt("visit https://github.com/settings/tokens to refresh credentials")
+            return StepResult.FAIL
+        if choice == "2":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = shutil.which("bash") or shutil.which("zsh") or shutil.which("sh")
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to authentication failure")
+        return StepResult.FAIL
+
+    def ref_conflict(self, stderr: str, cwd: str) -> StepResult:
+        """Handle ref/tag conflicts with safe skip or manual intervention."""
+        self.warn("git ref/tag conflict detected")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: cannot resolve ref conflict interactively")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Open shell to fix refs manually",
+                "2": "Skip and continue",
+                "3": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "3"
+            print()
+        else:
+            choice = "2"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = shutil.which("bash") or shutil.which("zsh") or shutil.which("sh")
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        if choice == "2":
+            allowed, reason = self._allow_remediation("skip_continue")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            _emit_remediation_event("skip_continue", "success")
+            return StepResult.OK
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to ref conflict")
+        return StepResult.FAIL
 
     def missing_remote(self, stderr: str, cwd: str
                       ) -> StepResult:
@@ -534,9 +807,13 @@ class Handlers:
                 if isinstance(e, EOFError): print()
                 self.abort()
         else:
-            msg = auto("attempting to add origin via SSH")
-            self.prompt(msg)
-            choice = "2"
+            can_ssh, _ = self._allow_remediation("add_origin_ssh")
+            if can_ssh:
+                msg = auto("attempting to add origin via SSH")
+                self.prompt(msg)
+                choice = "2"
+            else:
+                choice = "6"
 
         def get_repo_info() -> tuple[str, str]:
             repo_arg = const.GH_REPO
@@ -558,16 +835,28 @@ class Handlers:
         g    = "github.com"
         mock = None
         if choice == "1":
+            allowed, reason = self._allow_remediation("add_origin_https")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             info = get_repo_info()
             if not info: return StepResult.FAIL
             user, repo = info
             url = f"https://{g}/{user}/{repo}.git"
         elif choice == "2":
+            allowed, reason = self._allow_remediation("add_origin_ssh")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             info = get_repo_info()
             if not info: return StepResult.FAIL
             user, repo = info
             url = f"git@{g}:{user}/{repo}.git"
         elif choice == "3":
+            allowed, reason = self._allow_remediation("add_origin_token")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             try:
                 msg = "paste GitHub token (input hidden)"
                 self.prompt(msg)
@@ -585,10 +874,18 @@ class Handlers:
             url  = f"https://{token}@{g}/{user}/{repo}.git"
             mock = f"https://***@{g}/{user}/{repo}.git"
         elif choice == "4":
+            allowed, reason = self._allow_remediation("open_token_page")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             self.prompt(f"visit https://{g}/settings/tokens "
                         "to create a token")
             return StepResult.FAIL
         elif choice == "5":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             self.prompt("opening subshell. Fix remotes "
                         "manually. Exit to continue")
             os_shell = shutil.which("bash") \
@@ -601,24 +898,53 @@ class Handlers:
                 capture=False, text=True)
             return StepResult.RETRY
         elif choice == "6":
+            allowed, reason = self._allow_remediation("skip_continue")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="skip_continue",
+                result=StepResult.OK,
+            )
+            if simulated:
+                return result
             self.prompt("skipping fix and continuing")
+            _emit_remediation_event("skip_continue", "success")
             return StepResult.OK
         else:
+            allowed, reason = self._allow_remediation("abort")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
             self.abort("aborting as requested")
             return StepResult.FAIL
 
         mock = mock if mock else url
+        action_map = {
+            "1": "add_origin_https",
+            "2": "add_origin_ssh",
+            "3": "add_origin_token",
+        }
+        action = action_map.get(choice, "add_origin_unknown")
+        simulated, result = self._simulate_remediation(
+            action=action,
+            result=StepResult.RETRY,
+        )
+        if simulated:
+            return result
         try:
             self.prompt(f"adding remote {remote!r}↴\n{mock}")
             cp = _run(["git", "remote", "add", remote,
                  url], cwd, check=True)
             if cp.returncode != 0:
+                _emit_remediation_event(action, "failed")
                 self.warn("failed to add remote")
                 logger.debug("git remote add stderr: %s",
                     cp.stderr)
                 return StepResult.FAIL
         except Exception as e:
             logger.exception("Failed to add remote: %s", e)
+            _emit_remediation_event(action, "failed")
             exc = normalize_stderr(e)
             self.warn(f"failed to add remote: {exc}")
             return StepResult.FAIL
@@ -636,6 +962,7 @@ class Handlers:
             logger.exception("Failed to list remotes: %s", e)
 
         # success — suggest retry original operation
+        _emit_remediation_event(action, "success")
         return StepResult.RETRY
 
     def internet_con_err(self, stderr: str, _type: int = 1
@@ -685,7 +1012,20 @@ def normalize_stderr(stderr: Exception | str,
 
 def classify_stderr(stderr: str) -> dict[str, str]:
     """Return stable machine-readable classification metadata."""
-    return resolve.classify(stderr).as_dict()
+    return classifier_classify_stderr(stderr)
+
+
+def resolver_telemetry() -> dict[str, int]:
+    """Return classifier telemetry counters for diagnostics/tests."""
+    return {
+        "unknown_classifications": classifier_unknown_count(),
+        "rule_conflicts": classifier_rule_conflict_count(),
+    }
+
+
+def reset_resolver_telemetry() -> None:
+    """Reset classifier telemetry counters."""
+    reset_classifier_telemetry()
 
 
 # module-level reusable instance for importers

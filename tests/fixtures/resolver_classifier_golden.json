@@ -1,0 +1,164 @@
+[
+  {
+    "name": "network_connectivity",
+    "stderr": "fatal: could not resolve host: github.com",
+    "expected": {
+      "code": "PNP_NET_CONNECTIVITY",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "dubious_ownership",
+    "stderr": "fatal: detected dubious ownership in repository at '/repo'",
+    "expected": {
+      "code": "PNP_GIT_DUBIOUS_OWNERSHIP",
+      "severity": "warn",
+      "handler": "dubious_ownership"
+    }
+  },
+  {
+    "name": "invalid_object",
+    "stderr": "fatal: invalid object 1234567",
+    "expected": {
+      "code": "PNP_GIT_INVALID_OBJECT",
+      "severity": "error",
+      "handler": "invalid_object"
+    }
+  },
+  {
+    "name": "remote_url_invalid",
+    "stderr": "fatal: could not read from remote repository https://github.com/u/r.git",
+    "expected": {
+      "code": "PNP_NET_REMOTE_URL_INVALID",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "remote_url_invalid_with_token",
+    "stderr": "fatal: could not read from remote repository https://ghp_secret@github.com/u/r.git",
+    "expected": {
+      "code": "PNP_NET_REMOTE_URL_INVALID",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "remote_unreadable_no_url",
+    "stderr": "fatal: could not read from remote repository",
+    "expected": {
+      "code": "PNP_NET_REMOTE_UNREADABLE",
+      "severity": "error",
+      "handler": "missing_remote"
+    }
+  },
+  {
+    "name": "auth_failure",
+    "stderr": "fatal: Authentication failed for 'https://github.com/u/r.git'",
+    "expected": {
+      "code": "PNP_NET_AUTH_FAIL",
+      "severity": "error",
+      "handler": "auth_failure"
+    }
+  },
+  {
+    "name": "non_fast_forward",
+    "stderr": "! [rejected] main -> main (non-fast-forward)",
+    "expected": {
+      "code": "PNP_GIT_NON_FAST_FORWARD",
+      "severity": "error",
+      "handler": "repo_corruption"
+    }
+  },
+  {
+    "name": "ref_conflict",
+    "stderr": "error: cannot lock ref 'refs/tags/v1.0.0': reference already exists",
+    "expected": {
+      "code": "PNP_GIT_REF_CONFLICT",
+      "severity": "error",
+      "handler": "ref_conflict"
+    }
+  },
+  {
+    "name": "lock_contention",
+    "stderr": "fatal: Unable to create '.git/index.lock': File exists",
+    "expected": {
+      "code": "PNP_GIT_LOCK_CONTENTION",
+      "severity": "error",
+      "handler": "lock_contention"
+    }
+  },
+  {
+    "name": "upstream_missing",
+    "stderr": "fatal: The current branch main has no upstream branch.",
+    "expected": {
+      "code": "PNP_GIT_UPSTREAM_MISSING",
+      "severity": "error",
+      "handler": "upstream_missing"
+    }
+  },
+  {
+    "name": "tls_failure",
+    "stderr": "fatal: server certificate verification failed",
+    "expected": {
+      "code": "PNP_NET_TLS_FAIL",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "network_timeout",
+    "stderr": "fatal: Operation timed out after 120000 milliseconds",
+    "expected": {
+      "code": "PNP_NET_TIMEOUT",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "ambiguous_network_and_invalid_object",
+    "stderr": "fatal: could not resolve host github.com and invalid object deadbeef",
+    "expected": {
+      "code": "PNP_NET_CONNECTIVITY",
+      "severity": "error",
+      "handler": "internet_con_err"
+    }
+  },
+  {
+    "name": "unknown_stderr",
+    "stderr": "fatal: some brand new git error",
+    "expected": {
+      "code": "PNP_GIT_UNCLASSIFIED",
+      "severity": "warn",
+      "handler": "fallback"
+    }
+  },
+  {
+    "name": "empty_stderr",
+    "stderr": "",
+    "expected": {
+      "code": "PNP_GIT_EMPTY_STDERR",
+      "severity": "warn",
+      "handler": "fallback"
+    }
+  },
+  {
+    "name": "whitespace_only_stderr",
+    "stderr": "    \n\t  ",
+    "expected": {
+      "code": "PNP_GIT_UNCLASSIFIED",
+      "severity": "warn",
+      "handler": "fallback"
+    }
+  },
+  {
+    "name": "malformed_binary_like_stderr",
+    "stderr": "fatal: \u0000\u0001 weird \u0002 payload",
+    "expected": {
+      "code": "PNP_GIT_UNCLASSIFIED",
+      "severity": "warn",
+      "handler": "fallback"
+    }
+  }
+]

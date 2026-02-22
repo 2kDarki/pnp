@@ -16,6 +16,7 @@ from pnp.workflow_engine import Orchestrator
 from pnp import _constants as const
 from pnp.ops import run_hook
 from pnp import utils
+from pnp import ops
 
 
 def make_args(**overrides) -> Namespace:
@@ -104,6 +105,17 @@ class Phase1RegressionTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 run_hook("false", ".", dryrun=False)
 
+    def test_run_hook_suspends_and_resumes_console(self) -> None:
+        cp = subprocess.CompletedProcess(args="echo hi", returncode=0, stdout="ok\n", stderr="")
+        with patch("pnp.ops.subprocess.run", return_value=cp):
+            with patch("pnp.ops.utils.suspend_console") as suspend:
+                with patch("pnp.ops.utils.resume_console") as resume:
+                    with redirect_stdout(StringIO()):
+                        rc = run_hook("echo hi", ".", dryrun=False)
+        self.assertEqual(rc, 0)
+        suspend.assert_called_once()
+        resume.assert_called_once()
+
     def test_run_hook_disallowed_command_raises_value_error(self) -> None:
         with redirect_stdout(StringIO()):
             with self.assertRaises(ValueError):
@@ -175,6 +187,29 @@ class Phase1RegressionTests(unittest.TestCase):
                     _, result = o.run_machete()
         self.assertIs(result, utils.StepResult.OK)
         run.assert_called()
+
+    def test_run_machete_suspends_and_resumes_console(self) -> None:
+        cp = subprocess.CompletedProcess(
+            args=["git", "machete", "status"],
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+        with patch("pnp.ops.shutil.which", return_value="/usr/bin/git-machete"):
+            with patch("pnp.ops.subprocess.run", return_value=cp):
+                with patch("pnp.ops.utils.suspend_console") as suspend:
+                    with patch("pnp.ops.utils.resume_console") as resume:
+                        with redirect_stdout(StringIO()):
+                            _, result = ops.run_machete(
+                                repo=".",
+                                dry_run=False,
+                                machete_sync=False,
+                                machete_traverse=False,
+                                out=utils.Output(quiet=False),
+                            )
+        self.assertIs(result, utils.StepResult.OK)
+        suspend.assert_called_once()
+        resume.assert_called_once()
 
     def test_check_only_strict_escalates_doctor_warnings(self) -> None:
         from pnp.audit import run_check_only

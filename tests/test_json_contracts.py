@@ -1,5 +1,5 @@
 """Regression tests for machine-readable JSON contracts."""
-from __future__ import annotations
+
 
 import subprocess
 import unittest
@@ -14,6 +14,29 @@ def _extract_json(stdout: str) -> dict[str, object]:
         raise AssertionError("no JSON object found in output")
     blob = stdout[start:end + 1]
     return json.loads(blob)
+
+
+def _assert_error_envelope(payload: dict[str, object]) -> None:
+    envelope = payload.get("error_envelope")
+    if not isinstance(envelope, dict):
+        raise AssertionError("error_envelope is missing or not an object")
+    for key in (
+        "code",
+        "severity",
+        "category",
+        "actionable",
+        "message",
+        "operation",
+        "step",
+        "stderr_excerpt",
+        "raw_ref",
+        "retryable",
+        "user_action_required",
+        "suggested_fix",
+        "context",
+    ):
+        if key not in envelope:
+            raise AssertionError(f"missing error_envelope key: {key}")
 
 
 class JsonContractTests(unittest.TestCase):
@@ -38,6 +61,7 @@ class JsonContractTests(unittest.TestCase):
             self.assertIn("healthy", summary)
         checks = payload.get("checks")
         self.assertIsInstance(checks, list)
+        _assert_error_envelope(payload)
 
     def test_check_json_contract_v1(self) -> None:
         cp = subprocess.run(
@@ -61,6 +85,7 @@ class JsonContractTests(unittest.TestCase):
             self.assertIn("warnings", summary)
         findings = payload.get("findings")
         self.assertIsInstance(findings, list)
+        _assert_error_envelope(payload)
 
 
 if __name__ == "__main__":

@@ -13,13 +13,26 @@ import re
 # ===================== THIRD-PARTIES ======================
 from tuikit.textools import wrap_text, style_text as color
 from tuikit.textools import transmit as _transmit, pathit
-from tuikit.timetools import timestamp
 from tuikit.logictools import any_in
-from tuikit.textools import Align
+
 
 # ======================== LOCALS ==========================
 from . import _constants as const
 from ._constants import *
+
+PROJECT_MARKERS = (
+    "pyproject.toml",
+    "package.json",
+    "go.mod",
+    "Cargo.toml",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "composer.json",
+    "Gemfile",
+    "mix.exs",
+    "Project.toml",
+)
 
 
 class MessageSink(Protocol):
@@ -101,18 +114,25 @@ def find_repo(path: str, batch: bool = False,
     raise RuntimeError("[404] repo not found")
 
 
+def has_project_marker(path: str) -> bool:
+    """Return True when `path` contains a known project manifest file."""
+    return any(
+        os.path.exists(os.path.join(path, marker))
+        for marker in PROJECT_MARKERS
+    )
+
+
 def detect_subpackage(path: str, monorepo_path: str) -> str | None:
-    """Find subpackage by checking if pyproject.toml is present"""
-    # if path contains pyproject.toml, treat it as package
-    # root
+    """Find subpackage by checking common project marker files."""
+    # if path contains a project marker, treat it as package root
     candidate = os.path.abspath(path)
-    if os.path.exists(os.path.join(candidate, 'pyproject.toml')):
+    if has_project_marker(candidate):
         if candidate != monorepo_path: return candidate
 
-    # else, try to find nearest folder with pyproject
+    # else, try to find nearest folder with project marker
     # relative to monorepo root
     for root, _, files in os.walk(monorepo_path):
-        if 'pyproject.toml' in files:
+        if any(marker in files for marker in PROJECT_MARKERS):
             if candidate.startswith(root):
                 if root != monorepo_path: return root
     return None

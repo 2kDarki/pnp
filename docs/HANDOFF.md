@@ -48,8 +48,8 @@ Recommended execution order:
 
 1. Add `docs/ERROR_ENVELOPE.md` and a versioned schema (v1).
 2. Emit envelope in machine-readable outputs (`--check-json`, `--doctor-json`).
-3. Add schema lock + gate extension (similar to existing JSON contract gate).
-4. Add tests asserting every fail/abort path maps to stable codes/envelope fields.
+3. Persist runtime envelope for workflow failures in `pnplog/last_error_envelope.json`.
+4. Add tests asserting fail/abort paths map to stable codes/envelope fields.
 
 ## Release Hygiene Checklist
 

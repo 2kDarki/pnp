@@ -3,7 +3,8 @@
 [![CI](https://github.com/2kDarki/pnp/actions/workflows/ci.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/ci.yml)
 [![Publish to PyPI](https://github.com/2kDarki/pnp/actions/workflows/publish.yml/badge.svg)](https://github.com/2kDarki/pnp/actions/workflows/publish.yml)
 
-**pnp** is a lightweight Python CLI tool to automate the common developer workflow of:
+**pnp** is a lightweight CLI tool to automate common Git
+workflow steps for any project type:
 
 1. Staging and committing changes  
 2. Pushing to Git remotes  
@@ -28,6 +29,27 @@ It's designed for fast iteration, CI integration, and monorepo-aware projects.
 - GitHub releases: create releases from tags with optional asset uploads  
 - Dry-run mode for safe testing  
 - Optional git-machete checks/sync before push/publish  
+
+---
+
+## Project Detection
+
+`pnp` treats a directory as a project root when one or more
+common manifest markers are present:
+
+- `pyproject.toml`
+- `package.json`
+- `go.mod`
+- `Cargo.toml`
+- `pom.xml`
+- `build.gradle` / `build.gradle.kts`
+- `composer.json`
+- `Gemfile`
+- `mix.exs`
+- `Project.toml`
+
+These markers are used for monorepo subproject detection and
+doctor metadata checks.
 
 ---
 
@@ -178,7 +200,7 @@ git pnp --version
 
 ## Command-line Options
 
-path (positional): Path to the project/package (default .)
+path (positional): Path to the project root (default .)
 
 - `--push`: Push commits to remote
 
@@ -204,6 +226,7 @@ path (positional): Path to the project/package (default .)
 
 JSON schema contracts:
 - `docs/JSON_CONTRACTS.md`
+- `docs/ERROR_ENVELOPE.md`
 - Resolver taxonomy and codes: `docs/ERROR_CODES.md`
 - CI gate script: `tools/schema_gate.py`
 
@@ -231,9 +254,9 @@ JSON schema contracts:
 
 - `--tag-prefix`: Tag prefix (default v)
 
-- `--tag-message`: Tag message
+- `--tag-message`, `-m`: Tag message
 
-- `--edit-message`: Open editor to compose commit message via temp file
+- `--edit-message`, `-e`: Open editor to compose commit message via temp file
   (temp file is auto-deleted after workflow completion)
 
 - `--editor`: Editor command override for `--edit-message` (otherwise inherits Git/editor env)
