@@ -31,6 +31,7 @@ import os
 
 # ======================== LOCALS =========================
 from .error_model import FailureEvent, build_error_envelope
+from .project_adapters import SUPPORTED_PROJECT_TYPES
 from .ops import manage_git_extension_install
 from .error_model import resolve_failure_code
 from .audit import run_doctor, run_check_only
@@ -294,6 +295,9 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--dry-run", "-n", action="store_true")
     p.add_argument("--ci", action="store_true")
     p.add_argument("--interactive", "-i", action="store_true")
+    p.add_argument("--project-type",
+                   choices=SUPPORTED_PROJECT_TYPES,
+                   default="auto")
 
     # Github arguments
     p.add_argument("--gh-release", action="store_true")

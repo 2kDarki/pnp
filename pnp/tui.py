@@ -1,11 +1,11 @@
-from __future__ import annotations
+
 
 # ======================= STANDARDS =======================
 from contextlib import contextmanager
 from collections.abc import Iterator
 from types import TracebackType
 from enum import Enum
-import sys
+
 
 # ==================== THIRD-PARTIES ======================
 from rich.console import Console, RenderableType, Group

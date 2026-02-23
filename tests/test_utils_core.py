@@ -1,9 +1,9 @@
 """Unit tests for core pure utility behavior."""
 
 
-from pathlib import Path
 from subprocess import CompletedProcess
 from unittest.mock import patch
+from pathlib import Path
 import tempfile
 import unittest
 

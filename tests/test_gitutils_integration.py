@@ -1,5 +1,5 @@
 """Integration tests for gitutils using local temporary repositories."""
-from __future__ import annotations
+
 
 from argparse import Namespace
 import unittest

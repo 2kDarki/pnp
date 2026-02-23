@@ -3,6 +3,7 @@
 
 from contextlib import redirect_stdout
 from argparse import Namespace
+from unittest.mock import Mock
 
 from io import StringIO
 import unittest
@@ -38,6 +39,7 @@ def _args(**overrides: object) -> Namespace:
         "dry_run": False,
         "ci": True,
         "interactive": False,
+        "project_type": "auto",
         "gh_release": False,
         "gh_repo": None,
         "gh_token": None,
@@ -67,6 +69,77 @@ def _args(**overrides: object) -> Namespace:
 
 
 class WorkflowIntegrationTests(unittest.TestCase):
+    def test_publish_aborts_when_adapter_publish_command_fails(self) -> None:
+        args = _args(
+            publish=True,
+            project_type="node",
+            tag_bump="patch",
+            path=".",
+        )
+        setattr(
+            args,
+            "_pnp_adapter_config",
+            {"node": {"publish-command": "false"}},
+        )
+        o = Orchestrator(args, repo_path=".")
+        o.repo = "."
+        o.subpkg = "."
+        o.resolver = _Resolver()
+        o.log_text = "release"
+        o.latest = "v1.0.0"
+
+        fake_git = Mock()
+        fake_git.tags_sorted.return_value = []
+        fake_git.create_tag.return_value = None
+        fake_git.push.return_value = None
+        o.gitutils = fake_git
+
+        with redirect_stdout(StringIO()):
+            msg, result = o.publish()
+        self.assertIs(result, utils.StepResult.ABORT)
+        self.assertIsInstance(msg, tuple)
+        assert isinstance(msg, tuple)
+        self.assertIn("adapter publish failed", msg[0])
+
+    def test_publish_aborts_when_adapter_pre_publish_command_fails(self) -> None:
+        fix = GitFixture()
+        try:
+            repo = fix.init_repo("repo")
+            fix.set_identity(repo, "pnp-test", "pnp@example.com")
+            (repo / "package.json").write_text(
+                "{\"name\": \"app\", \"version\": \"1.0.0\"}\n",
+                encoding="utf-8",
+            )
+            fix.commit_all(repo, "init")
+
+            args = _args(
+                publish=True,
+                path=str(repo),
+                project_type="node",
+                tag_bump="patch",
+            )
+            setattr(
+                args,
+                "_pnp_adapter_config",
+                {"node": {"pre-publish-hook": "false"}},
+            )
+            o = Orchestrator(args, repo_path=str(repo))
+            o.repo = str(repo)
+            o.subpkg = str(repo)
+            o.gitutils = gitutils
+            o.resolver = _Resolver()
+            o.log_text = "release"
+            o.latest = "v1.0.0"
+
+            with redirect_stdout(StringIO()):
+                msg, result = o.publish()
+            self.assertIs(result, utils.StepResult.ABORT)
+            self.assertIsInstance(msg, tuple)
+            assert isinstance(msg, tuple)
+            self.assertIn("adapter pre-publish failed", msg[0])
+        finally:
+            fix.close()
+
     def test_publish_rollback_deletes_local_tag_on_push_failure(self) -> None:
         fix = GitFixture()
         try:

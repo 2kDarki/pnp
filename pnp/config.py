@@ -7,13 +7,15 @@ Precedence order (low -> high):
 4) environment variables
 5) explicit CLI options
 """
-from __future__ import annotations
+
 
 from argparse import Namespace, ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
 import os
+
+from .project_adapters import SUPPORTED_PROJECT_TYPES
 
 try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -47,6 +49,13 @@ SPECS: tuple[OptionSpec, ...] = (
     OptionSpec("dry_run", "dry-run", "PNP_DRY_RUN", "bool"),
     OptionSpec("ci", "ci", "PNP_CI", "bool"),
     OptionSpec("interactive", "interactive", "PNP_INTERACTIVE", "bool"),
+    OptionSpec(
+        "project_type",
+        "project-type",
+        "PNP_PROJECT_TYPE",
+        "str",
+        choices=SUPPORTED_PROJECT_TYPES,
+    ),
     OptionSpec("gh_release", "gh-release", "PNP_GH_RELEASE", "bool"),
     OptionSpec("gh_repo", "gh-repo", "PNP_GH_REPO", "str"),
     OptionSpec("gh_token", "gh-token", "PNP_GH_TOKEN", "str"),
@@ -152,6 +161,38 @@ def _load_pyproject_overrides(path: str
     return values, diagnostics, str(pyproject)
 
 
+def _load_pyproject_adapter_tables(path: str
+    ) -> tuple[dict[str, dict[str, object]], list[dict[str, str]], str | None]:
+    pyproject = _find_pyproject(path)
+    if pyproject is None: return {}, [], None
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}, [], str(pyproject)
+
+    table = data.get("tool", {}).get("pnp")
+    if not isinstance(table, dict): return {}, [], str(pyproject)
+
+    allowed = {
+        t for t in SUPPORTED_PROJECT_TYPES
+        if t not in {"auto", "generic"}
+    }
+    diagnostics: list[dict[str, str]] = []
+    adapter_tables: dict[str, dict[str, object]] = {}
+    for raw_key, raw_val in table.items():
+        if not isinstance(raw_val, dict): continue
+        key = str(raw_key).strip().lower().replace("_", "-")
+        if key not in allowed:
+            msg = "unknown adapter table in [tool.pnp.<adapter>]"
+            diagnostics.append(_diag("warning", "pyproject", str(raw_key), raw_val, msg))
+            continue
+        normalized: dict[str, object] = {}
+        for cfg_key, cfg_value in raw_val.items():
+            normalized[str(cfg_key).strip().lower().replace("_", "-")] = cfg_value
+        adapter_tables[key] = normalized
+    return adapter_tables, diagnostics, str(pyproject)
+
+
 def _read_git_scope(scope_args: list[str], repo: str | None = None) -> dict[str, str]:
     cmd = ["git"]
     if repo: cmd += ["-C", repo]
@@ -237,12 +278,13 @@ def apply_layered_config(args: Namespace, argv: list[str], parser: ArgumentParse
     """Apply git/env overrides unless destination was set explicitly by CLI."""
     merged   = Namespace(**vars(args))
     explicit = _explicit_cli_dests(argv, parser)
-    py_vals, py_diags, pyproject_path = _load_pyproject_overrides(
-        getattr(merged, "path", "."))
+    path = getattr(merged, "path", ".")
+    py_vals, py_diags, pyproject_path = _load_pyproject_overrides(path)
+    adapter_tables, adapter_diags, _ = _load_pyproject_adapter_tables(path)
     git_vals = _load_git_overrides(getattr(merged, "path", "."))
     env_vals = _load_env_overrides()
     sources: dict[str, str] = {}
-    diagnostics: list[dict[str, str]] = list(py_diags)
+    diagnostics: list[dict[str, str]] = list(py_diags) + list(adapter_diags)
 
     for k in vars(merged): sources[k] = "default"
     for dest in explicit: sources[dest] = "cli"
@@ -267,4 +309,5 @@ def apply_layered_config(args: Namespace, argv: list[str], parser: ArgumentParse
     setattr(merged, "_pnp_config_sources", sources)
     setattr(merged, "_pnp_config_diagnostics", diagnostics)
     setattr(merged, "_pnp_config_files", {"pyproject": pyproject_path})
+    setattr(merged, "_pnp_adapter_config", adapter_tables)
     return merged

@@ -1,5 +1,5 @@
 """Integration-style tests for GitHub API helpers using a local mock server."""
-from __future__ import annotations
+
 
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer

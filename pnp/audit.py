@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Callable
 from pathlib import Path
+from collections.abc import Iterable
 import subprocess
 import argparse
 import tempfile
@@ -10,12 +11,14 @@ import time
 import json
 import sys
 import os
+import shlex
 
 try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
 from .error_model import build_error_envelope
+from .project_adapters import resolve_project_adapter
 from . import _constants as const
 from .tui import tui_runner
 from .ops import run_hook
@@ -380,6 +383,79 @@ def _metadata_check(pkg_root: str) -> tuple[str, str]:
     return "ok", "; ".join(details)
 
 
+def _load_adapter_pyproject_config(project_root: str) -> tuple[str | None, dict[str, dict[str, object]]]:
+    pyproject = Path(project_root) / "pyproject.toml"
+    if not pyproject.is_file(): return None, {}
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    except Exception:
+        return None, {}
+    tool = data.get("tool")
+    if not isinstance(tool, dict): return None, {}
+    table = tool.get("pnp")
+    if not isinstance(table, dict): return None, {}
+
+    override: str | None = None
+    raw_override = table.get("project-type")
+    if raw_override is None:
+        raw_override = table.get("project_type")
+    if isinstance(raw_override, str) and raw_override.strip():
+        override = raw_override.strip().lower()
+
+    adapter_tables: dict[str, dict[str, object]] = {}
+    for raw_key, raw_val in table.items():
+        if not isinstance(raw_val, dict): continue
+        key = str(raw_key).strip().lower().replace("_", "-")
+        normalized: dict[str, object] = {}
+        for cfg_key, cfg_val in raw_val.items():
+            cfg_norm = str(cfg_key).strip().lower().replace("_", "-")
+            normalized[cfg_norm] = cfg_val
+        adapter_tables[key] = normalized
+    return override, adapter_tables
+
+
+def _command_binaries(commands: Iterable[str]) -> list[str]:
+    binaries: list[str] = []
+    seen: set[str] = set()
+    for raw in commands:
+        cmd = raw.strip()
+        if not cmd: continue
+        try:
+            parts = shlex.split(cmd, posix=(os.name != "nt"))
+        except ValueError:
+            parts = cmd.split()
+        if not parts: continue
+        binary = os.path.basename(parts[0])
+        if not binary or binary in seen: continue
+        seen.add(binary)
+        binaries.append(binary)
+    return binaries
+
+
+def _adapter_toolchain_check(project_root: str) -> tuple[str, str]:
+    override, tables = _load_adapter_pyproject_config(project_root)
+    adapter = resolve_project_adapter(project_root, override=override)
+    adapter_cfg = tables.get(adapter.project_type, {})
+    commands = adapter.pre_publish_commands(adapter_cfg) + adapter.publish_commands(adapter_cfg)
+    if not commands:
+        return "ok", f"{adapter.project_type}: no adapter commands configured"
+
+    binaries = _command_binaries(commands)
+    if not binaries:
+        return "warn", f"{adapter.project_type}: unable to resolve command binaries"
+
+    missing = [name for name in binaries if not ops.command_exists(name)]
+    if missing:
+        return "warn", (
+            f"{adapter.project_type}: missing command(s): "
+            + ", ".join(missing)
+        )
+    return "ok", (
+        f"{adapter.project_type}: toolchain ready "
+        + f"({', '.join(binaries)})"
+    )
+
+
 def _has_test_footprint(pkg_root: str) -> bool:
     """Detect test footprint using cross-language conventions."""
     root = Path(pkg_root)
@@ -438,6 +514,7 @@ def run_doctor(path: str, out: utils.Output,
         "Repository integrity",
         "Project metadata",
         "Test footprint",
+        "Adapter toolchain",
         "GitHub token",
     ]
     use_ui = bool(const.CI_MODE and not const.PLAIN
@@ -775,18 +852,39 @@ def run_doctor(path: str, out: utils.Output,
             ui.finish(9, utils.StepResult.ABORT)
 
         ui.start(10)
+        if pkg_root:
+            status, detail = _adapter_toolchain_check(pkg_root)
+            add_check("adapter_toolchain", status, detail)
+            if status == "warn":
+                warnings += 1
+                out.warn(detail, step_idx=10)
+                pause_step()
+                ui.finish(10, utils.StepResult.ABORT)
+            else:
+                out.success(detail, step_idx=10)
+                pause_step()
+                ui.finish(10, utils.StepResult.OK)
+        else:
+            warnings += 1
+            add_check("adapter_toolchain", "warn",
+                      "skipped (no project root)")
+            out.warn("Skipped (no project root)", step_idx=10)
+            pause_step()
+            ui.finish(10, utils.StepResult.ABORT)
+
+        ui.start(11)
         token = os.environ.get("GITHUB_TOKEN")
         if token:
             add_check("github_token", "ok", "set")
-            out.success("Set (GITHUB_TOKEN)", step_idx=10)
+            out.success("Set (GITHUB_TOKEN)", step_idx=11)
             pause_step()
-            ui.finish(10, utils.StepResult.OK)
+            ui.finish(11, utils.StepResult.OK)
         else:
             warnings += 1
             add_check("github_token", "warn", "missing")
-            out.warn("Missing (set GITHUB_TOKEN for releases)", step_idx=10)
+            out.warn("Missing (set GITHUB_TOKEN for releases)", step_idx=11)
             pause_step()
-            ui.finish(10, utils.StepResult.ABORT)
+            ui.finish(11, utils.StepResult.ABORT)
 
     report = {
         "schema": DOCTOR_SCHEMA,
@@ -869,6 +967,23 @@ def run_check_only(args: argparse.Namespace,
                 blockers += warn_count
                 note("blocker", "doctor",
                      f"check-only strict: doctor reported {warn_count} warning(s)")
+                checks = parsed.get("checks", [])
+                if isinstance(checks, list):
+                    adapter_warn = next(
+                        (
+                            c for c in checks
+                            if isinstance(c, dict)
+                            and c.get("name") == "adapter_toolchain"
+                            and c.get("status") == "warn"
+                        ),
+                        None,
+                    )
+                    if isinstance(adapter_warn, dict):
+                        detail = str(adapter_warn.get("details", "")).strip()
+                        msg = "check-only strict: adapter toolchain warning escalated"
+                        if detail:
+                            msg = f"{msg}: {detail}"
+                        note("blocker", "adapter_toolchain", msg)
             elif warn_count > 0:
                 note("warn", "doctor",
                      f"check-only: doctor reported {warn_count} warning(s)")

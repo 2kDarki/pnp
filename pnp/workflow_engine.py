@@ -14,6 +14,8 @@ from .error_model import (
     error_policy_for,
     resolve_failure_code,
 )
+from .project_adapters import resolve_project_adapter
+from .project_adapters import ProjectAdapter
 from . import _constants as const
 from .tui import tui_runner
 from .ops import run_hook
@@ -71,6 +73,8 @@ class Orchestrator:
         self.log_text:   str | None = None
         self._temp_message_files: list[str] = []
         self.failure_hint: FailureEvent | None = None
+        self.project_type: str = "generic"
+        self.project_adapter: ProjectAdapter | None = None
 
     def _resolver_classification(self) -> tuple[str, str, str]:
         """Best-effort resolver classification from the last git error."""
@@ -148,6 +152,81 @@ class Orchestrator:
                              step_idx: int | None = None
                             ) -> None:
         ops.rollback_delete_tag(repo, tag, self.out, step_idx)
+
+    def _ensure_project_adapter(self) -> ProjectAdapter:
+        if self.project_adapter is not None:
+            return self.project_adapter
+        root = self.subpkg or self.repo or self.path
+        override = str(getattr(self.args, "project_type", "auto"))
+        adapter = resolve_project_adapter(root, override=override)
+        self.project_adapter = adapter
+        self.project_type = adapter.project_type
+        return adapter
+
+    def _adapter_config(self, adapter: ProjectAdapter) -> dict[str, object]:
+        tables = getattr(self.args, "_pnp_adapter_config", None)
+        if not isinstance(tables, dict): return {}
+        raw = tables.get(adapter.project_type)
+        if isinstance(raw, dict): return raw
+        return {}
+
+    def _run_adapter_pre_publish(
+        self,
+        adapter: ProjectAdapter,
+        step_idx: int | None = None,
+    ) -> tuple[str | tuple[str, bool] | None, utils.StepResult]:
+        config = self._adapter_config(adapter)
+        commands = adapter.pre_publish_commands(config)
+        if not commands:
+            return None, utils.StepResult.OK
+
+        assert self.subpkg is not None
+        self.out.info(
+            f"running {adapter.project_type} pre-publish commands:\n"
+            + utils.to_list(commands),
+            step_idx=step_idx,
+        )
+        for cmd in commands:
+            try:
+                run_hook(
+                    cmd,
+                    self.subpkg,
+                    self.args.dry_run,
+                    self.args.no_transmission,
+                )
+            except (RuntimeError, ValueError) as e:
+                message = self.resolver.normalize_stderr(e)
+                return (f"adapter pre-publish failed: {message}", False), utils.StepResult.ABORT
+        return None, utils.StepResult.OK
+
+    def _run_adapter_publish(
+        self,
+        adapter: ProjectAdapter,
+        step_idx: int | None = None,
+    ) -> tuple[str | tuple[str, bool] | None, utils.StepResult]:
+        config = self._adapter_config(adapter)
+        commands = adapter.publish_commands(config)
+        if not commands:
+            return None, utils.StepResult.OK
+
+        assert self.subpkg is not None
+        self.out.info(
+            f"running {adapter.project_type} publish commands:\n"
+            + utils.to_list(commands),
+            step_idx=step_idx,
+        )
+        for cmd in commands:
+            try:
+                run_hook(
+                    cmd,
+                    self.subpkg,
+                    self.args.dry_run,
+                    self.args.no_transmission,
+                )
+            except (RuntimeError, ValueError) as e:
+                message = self.resolver.normalize_stderr(e)
+                return (f"adapter publish failed: {message}", False), utils.StepResult.ABORT
+        return None, utils.StepResult.OK
 
     # ---------- Workflow Plan ----------
     def _workflow_plan(self) -> tuple[list[Any], list[str], list[str]]:
@@ -317,6 +396,8 @@ class Orchestrator:
             self.out.success(msg, step_idx)
         else: self.subpkg = self.repo
         assert self.subpkg is not None
+        adapter = self._ensure_project_adapter()
+        self.out.success(f"project type: {adapter.project_type}", step_idx)
 
         return None, utils.StepResult.OK
 
@@ -670,9 +751,19 @@ class Orchestrator:
         if not self.args.publish:
             return None, utils.StepResult.SKIP
 
-        self.tag = utils.bump_semver_from_tag(
-                   self.latest or "", self.args.tag_bump,
-                   prefix=self.args.tag_prefix)
+        adapter = self._ensure_project_adapter()
+        pre_msg, pre_result = self._run_adapter_pre_publish(
+            adapter,
+            step_idx=step_idx,
+        )
+        if pre_result is not utils.StepResult.OK:
+            return pre_msg, pre_result
+        self.tag = adapter.compute_next_tag(
+            latest_tag=self.latest or "",
+            bump=self.args.tag_bump,
+            prefix=self.args.tag_prefix,
+            project_root=self.subpkg or self.repo or self.path,
+        )
         self.out.success(f"new tag: {self.tag}", step_idx)
 
         if self.args.dry_run:
@@ -707,6 +798,13 @@ class Orchestrator:
                 e = self.resolver.normalize_stderr(e,
                     "failed to push tags:")
                 return (e, False), utils.StepResult.ABORT
+
+        publish_msg, publish_result = self._run_adapter_publish(
+            adapter,
+            step_idx=step_idx,
+        )
+        if publish_result is not utils.StepResult.OK:
+            return publish_msg, publish_result
 
         return None, utils.StepResult.OK
 

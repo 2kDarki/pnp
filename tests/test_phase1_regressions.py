@@ -251,6 +251,38 @@ class Phase1RegressionTests(unittest.TestCase):
                     code = run_check_only(args, utils.Output(quiet=False))
         self.assertEqual(code, 10)
 
+    def test_check_only_strict_surfaces_adapter_toolchain_blocker(self) -> None:
+        from pnp.audit import run_check_only
+
+        def fake_doctor(path: str, out: utils.Output, json_mode: bool = False,
+                        report_file: str | None = None) -> int:
+            if report_file:
+                payload = {
+                    "summary": {"critical": 0, "warnings": 1, "healthy": False},
+                    "checks": [
+                        {
+                            "name": "adapter_toolchain",
+                            "status": "warn",
+                            "details": "node: missing command(s): npm",
+                        }
+                    ],
+                }
+                Path(report_file).write_text(json.dumps(payload), encoding="utf-8")
+            return 0
+
+        args = make_args(check_only=True, strict=True, push=False, publish=False, check_json=False)
+        out = utils.Output(quiet=False)
+        buf = StringIO()
+        with patch("pnp.audit.run_doctor", side_effect=fake_doctor):
+            with patch("pnp.audit._find_repo_noninteractive", return_value="."):
+                with redirect_stdout(buf):
+                    code = run_check_only(args, out)
+        self.assertEqual(code, 20)
+        self.assertIn(
+            "adapter toolchain warning escalated",
+            buf.getvalue(),
+        )
+
     def test_run_hooks_ci_fails_fast_on_first_error(self) -> None:
         o = Orchestrator(make_args(hooks="a; b", ci=True, interactive=False), repo_path=".")
         o.subpkg = "."

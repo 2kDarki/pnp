@@ -262,6 +262,8 @@ JSON schema contracts:
 
 - `--remote`: Remote name to push (default: origin or upstream)
 
+- `--project-type`: Adapter selection (`auto`, `generic`, `python`, `node`, `rust`, `go`, `java`, `php`, `ruby`, `elixir`, `julia`)
+
 - `--tag-bump`: Type of version bump (major, minor, patch)
 
 - `--tag-prefix`: Tag prefix (default v)
@@ -308,6 +310,12 @@ push = true
 publish = true
 tag-bump = "minor"
 machete-status = true
+
+[tool.pnp.node]
+pre-publish-hooks = ["drace lint .", "python -m unittest -q"]
+build-script = "build"
+test-script = "test"
+publish-command = "npm publish --access public"
 
 # git/env overrides
 git config --global pnp.push true

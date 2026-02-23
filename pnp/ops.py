@@ -199,6 +199,7 @@ def show_effective_config(args: argparse.Namespace,
         "push", "publish", "remote", "force",
         "no_transmission", "quiet", "plain", "verbose",
         "debug", "auto_fix", "dry_run", "ci", "interactive",
+        "project_type",
         "gh_release", "gh_repo", "gh_token", "gh_draft",
         "gh_prerelease", "gh_assets", "check_only",
         "check_json", "strict", "tag_prefix", "tag_message",
@@ -221,6 +222,9 @@ def show_effective_config(args: argparse.Namespace,
                   None)
     if isinstance(diagnostics, list):
         effective["_config_diagnostics"] = diagnostics
+    adapter_cfg = getattr(args, "_pnp_adapter_config", None)
+    if isinstance(adapter_cfg, dict):
+        effective["_adapter_config"] = adapter_cfg
     if isinstance(effective.get("gh_token"), str) and effective["gh_token"]:
         effective["gh_token"] = "***redacted***"
     out.raw(json.dumps(effective, indent=2, sort_keys=True))

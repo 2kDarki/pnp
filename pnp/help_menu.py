@@ -21,8 +21,9 @@ ALLOWED_OPTIONS = {
                  "--auto-fix", "-a", "--quiet", "-q",
                  "--safe-reset", "--destructive-reset",
                  "--force", "-f", "--debug", "-d", "-v",
-                "--verbose", "--batch-commit", "-b",
-                "--plain", "--doctor", "--version",
+                 "--verbose", "--batch-commit", "-b",
+                 "--project-type",
+                 "--plain", "--doctor", "--version",
                 "--check-only", "--strict",
                 "--check-json",
                 "--show-config", "--doctor-json",
@@ -207,6 +208,10 @@ def print_help(section: int = 0) -> None:
                        + "workflow")}
     Dry run mode       {desc("-n / --dry-run to simulate "
                        + "actions")}
+    Project type       {desc("--project-type auto|generic|"
+                       + "python|node|rust|go|java|php|ruby|"
+                       + "elixir|julia to select adapter "
+                       + "resolution mode (default: auto)")}
     Debug mode         {desc("-d / --debug to show full "
                        + "traceback when an error occurs")}
     Debug bundle       {desc("--debug-report to generate a "

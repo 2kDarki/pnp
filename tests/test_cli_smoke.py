@@ -34,6 +34,7 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("--safe-reset", cp.stdout)
         self.assertIn("--destructive-reset", cp.stdout)
         self.assertIn("--editor", cp.stdout)
+        self.assertIn("--project-type", cp.stdout)
 
     def test_ci_dry_run_without_repo_exits_non_zero(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -156,6 +157,7 @@ class CliSmokeTests(unittest.TestCase):
         )
         self.assertEqual(cp.returncode, 0, cp.stderr)
         self.assertIn("\"path\":", cp.stdout)
+        self.assertIn("\"project_type\":", cp.stdout)
         self.assertIn("\"_sources\":", cp.stdout)
         self.assertIn("\"_config_diagnostics\":", cp.stdout)
         self.assertIn("\"_config_files\":", cp.stdout)
@@ -164,7 +166,10 @@ class CliSmokeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "pyproject.toml").write_text(
-                "[tool.pnp]\nremote = 'upstream'\n",
+                (
+                    "[tool.pnp]\nremote = 'upstream'\nproject-type='node'\n\n"
+                    "[tool.pnp.node]\npre-publish-hook='drace lint .'\n"
+                ),
                 encoding="utf-8",
             )
             cp = subprocess.run(
@@ -178,6 +183,9 @@ class CliSmokeTests(unittest.TestCase):
         payload = json.loads(cp.stdout[:end + 1])
         self.assertEqual(payload["remote"], "upstream")
         self.assertEqual(payload["_sources"]["remote"], "pyproject")
+        self.assertEqual(payload["project_type"], "node")
+        self.assertIn("_adapter_config", payload)
+        self.assertIn("node", payload["_adapter_config"])
 
     def test_doctor_json_runs(self) -> None:
         cp = subprocess.run(

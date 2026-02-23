@@ -1,5 +1,5 @@
 """Constants across pnp."""
-from __future__ import annotations
+
 
 from argparse import Namespace
 
@@ -21,15 +21,15 @@ PNP            = color(f"{APP} ", "magenta")
 I              = 6
 
 # Runtime flags: initialized once per invocation by CLI.
-PLAIN           = False
-DEBUG           = False
-AUTOFIX         = False
-CI_MODE         = True
-DRY_RUN         = False
-QUIET           = False
-NO_TRANSMISSION = False
-GH_REPO         = None
-ALLOW_SAFE_RESET = False
+PLAIN                   = False
+DEBUG                   = False
+AUTOFIX                 = False
+CI_MODE                 = True
+DRY_RUN                 = False
+QUIET                   = False
+NO_TRANSMISSION         = False
+GH_REPO                 = None
+ALLOW_SAFE_RESET        = False
 ALLOW_DESTRUCTIVE_RESET = False
 
 
