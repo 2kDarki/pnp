@@ -358,6 +358,25 @@ class Handlers:
         if cp.returncode != 0:
             detail = (cp.stderr or cp.stdout or "").strip()
             lowered = detail.lower()
+            index_inconsistent = any_in(
+                "unable to index",
+                "failed to insert into database",
+                "unable to stat",
+                "short read while indexing",
+                eq=lowered,
+            )
+            if index_inconsistent:
+                self.warn("index/worktree mismatch detected during renormalization; attempting index rebuild fallback")
+                reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
+                readd_cp = _run(["git", "add", "-A"], cwd, check=False)
+                if reset_cp.returncode == 0 and readd_cp.returncode == 0:
+                    _emit_remediation_event(
+                        "renormalize_line_endings",
+                        "success",
+                        {"mode": "primary_reset_mixed_add_all"},
+                    )
+                    self.success("line endings normalized (index rebuild fallback)")
+                    return StepResult.RETRY
             old_git = any_in(
                 "unknown option", "renormalize", "usage: git add", eq=lowered
             )
