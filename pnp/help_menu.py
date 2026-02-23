@@ -16,10 +16,11 @@ INDENT          = 23  # Indented spaces for options
 ALLOWED_OPTIONS = {
      "global": ["--push", "-p", "--publish", "-P",
                 "--interactive", "-i", "--dry-run", "-n",
-                "--ci", "--hooks", "--remote", "-r",
-                "--changelog-file", "--no-transmission",
-                "--auto-fix", "-a", "--quiet", "-q",
-                "--force", "-f", "--debug", "-d", "-v",
+                 "--ci", "--hooks", "--remote", "-r",
+                 "--changelog-file", "--no-transmission",
+                 "--auto-fix", "-a", "--quiet", "-q",
+                 "--safe-reset", "--destructive-reset",
+                 "--force", "-f", "--debug", "-d", "-v",
                 "--verbose", "--batch-commit", "-b",
                 "--plain", "--doctor", "--version",
                 "--check-only", "--strict",
@@ -182,6 +183,12 @@ def print_help(section: int = 0) -> None:
                        + "asked for input if in interactive "
                        + "mode, otherwise it will abort "
                        + "workflow")}
+    Safe reset         {desc("--safe-reset to explicitly allow "
+                       + "safe reset remediation in auto-fix "
+                       + "mode")}
+    Destructive reset  {desc("--destructive-reset to explicitly "
+                       + "allow destructive reset remediation "
+                       + "in auto-fix mode")}
     Verbose mode       {desc("-v / --verbose to show output "
                        + "when running batch commits ")}
     Quiet mode         {desc("-q / --quiet for silent "

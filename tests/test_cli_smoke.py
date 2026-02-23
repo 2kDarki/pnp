@@ -31,6 +31,8 @@ class CliSmokeTests(unittest.TestCase):
         self.assertIn("-e", cp.stdout)
         self.assertIn("--tag-message", cp.stdout)
         self.assertIn("-m", cp.stdout)
+        self.assertIn("--safe-reset", cp.stdout)
+        self.assertIn("--destructive-reset", cp.stdout)
         self.assertIn("--editor", cp.stdout)
 
     def test_ci_dry_run_without_repo_exits_non_zero(self) -> None:

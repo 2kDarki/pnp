@@ -24,6 +24,7 @@ RETRYABLE_CODE_ALLOWLIST: set[str] = {
     "PNP_NET_REMOTE_UNREADABLE",
     "PNP_NET_TIMEOUT",
     "PNP_NET_PUSH_FAIL",
+    "PNP_GIT_DUBIOUS_OWNERSHIP",
     "PNP_GIT_LOCK_CONTENTION",
     "PNP_GIT_UPSTREAM_MISSING",
     "PNP_GIT_NON_FAST_FORWARD",
@@ -31,7 +32,6 @@ RETRYABLE_CODE_ALLOWLIST: set[str] = {
 
 NON_RETRYABLE_CODE_DENYLIST: set[str] = {
     "PNP_GIT_INVALID_OBJECT",
-    "PNP_GIT_DUBIOUS_OWNERSHIP",
     "PNP_GIT_EMPTY_STDERR",
     "PNP_GIT_UNCLASSIFIED",
     "PNP_INT_WORKFLOW_EXIT_NONZERO",
@@ -67,6 +67,13 @@ RETRY_POLICY_BY_CODE: dict[str, dict[str, float | int | bool]] = {
         "max_delay_s": 1.0,
         "jitter_s": 0.08,
     },
+    "PNP_GIT_DUBIOUS_OWNERSHIP": {
+        "retryable": True,
+        "max_retries": 1,
+        "base_delay_s": 0.05,
+        "max_delay_s": 0.20,
+        "jitter_s": 0.02,
+    },
     "PNP_GIT_LOCK_CONTENTION": {
         "retryable": True,
         "max_retries": 1,
@@ -97,6 +104,7 @@ TIMEOUT_BUDGET_BY_CODE_S: dict[str, float] = {
     "PNP_NET_REMOTE_UNREADABLE": 15.0,
     "PNP_NET_TIMEOUT": 20.0,
     "PNP_NET_PUSH_FAIL": 20.0,
+    "PNP_GIT_DUBIOUS_OWNERSHIP": 12.0,
     "PNP_GIT_LOCK_CONTENTION": 12.0,
     "PNP_GIT_UPSTREAM_MISSING": 12.0,
     "PNP_GIT_NON_FAST_FORWARD": 20.0,
@@ -253,6 +261,12 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
             timeout_budget_s = min(timeout_budget_s, _timeout_budget_for(code))
         max_retries = int(policy.get("max_retries", 0))
         retryable = bool(policy.get("retryable", False))
+        # Resolver handlers return RETRY only after an explicit remediation path.
+        # Allow one immediate retry even for denylisted codes so repaired state
+        # can be re-evaluated in the same invocation.
+        if not retryable and tries == 0:
+            retryable = True
+            max_retries = 1
         if retryable and tries < max_retries:
             attempt = tries + 1
             delay_s = _retry_delay_seconds(tries, policy)

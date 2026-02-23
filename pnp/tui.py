@@ -47,7 +47,13 @@ class TUIRunner:
                    ) -> None:
         if not self.enabled or idx is None:
             # fallback: print directly if step index unknown
-            print(msg); return
+            text = utils.wrap(msg) if prfx else msg
+            styled = utils.color(text, fg)
+            if prfx:
+                print(f"{utils.const.PNP}{styled}")
+            else:
+                print(styled)
+            return
         self._messages[idx].append((msg, fg, prfx))
         self._refresh()
 

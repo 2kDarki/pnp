@@ -42,6 +42,8 @@ SPECS: tuple[OptionSpec, ...] = (
     OptionSpec("verbose", "verbose", "PNP_VERBOSE", "bool"),
     OptionSpec("debug", "debug", "PNP_DEBUG", "bool"),
     OptionSpec("auto_fix", "auto-fix", "PNP_AUTO_FIX", "bool"),
+    OptionSpec("safe_reset", "safe-reset", "PNP_SAFE_RESET", "bool"),
+    OptionSpec("destructive_reset", "destructive-reset", "PNP_DESTRUCTIVE_RESET", "bool"),
     OptionSpec("dry_run", "dry-run", "PNP_DRY_RUN", "bool"),
     OptionSpec("ci", "ci", "PNP_CI", "bool"),
     OptionSpec("interactive", "interactive", "PNP_INTERACTIVE", "bool"),

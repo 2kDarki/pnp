@@ -80,6 +80,49 @@ def _timestamped_backup_name(base: Path) -> Path:
     return base.parent / f"{base.name}-backup-{ts}"
 
 
+def _https_fallback_remote(remote_url: str) -> str | None:
+    """Return HTTPS fallback for common SSH remote formats."""
+    text = remote_url.strip()
+    match = re.match(r"^git@([^:]+):(.+)$", text)
+    if match is not None:
+        host, repo = match.group(1), match.group(2)
+        return f"https://{host}/{repo}"
+    match = re.match(r"^ssh://git@([^/]+)/(.+)$", text)
+    if match is not None:
+        host, repo = match.group(1), match.group(2)
+        return f"https://{host}/{repo}"
+    return None
+
+
+def _safe_reset_manual_steps(
+    remote_url: str,
+    cwd: Path,
+    backup_dir: Path,
+    branch: str,
+) -> list[str]:
+    """Build explicit manual recovery steps after safe-reset clone failures."""
+    steps = [
+        f"1) verify remote is reachable: git ls-remote {remote_url}",
+        "2) if SSH fails, verify keys: ssh -T git@github.com",
+    ]
+    https_url = _https_fallback_remote(remote_url)
+    if https_url:
+        steps.append(f"3) switch to HTTPS fallback: git -C {cwd} remote set-url origin {https_url}")
+    else:
+        steps.append("3) set a working HTTPS remote URL for origin")
+    branch_name = branch or "main"
+    steps.extend(
+        [
+            f"4) fresh clone manually: git clone <working-remote-url> {cwd.name}-reclone",
+            "5) copy recovered .git into repo and restore files from backup:",
+            f"   backup path: {backup_dir}",
+            f"6) retry pnp with: python -m pnp {cwd} --ci --auto-fix --safe-reset",
+            f"7) if still blocked, checkout branch explicitly: git -C {cwd} checkout {branch_name}",
+        ]
+    )
+    return steps
+
+
 def _safe_copytree(src: Path, dst: Path,
                    ignore: Callable[[str, list[str]],
                            Iterable[str]] | Callable[[str |
@@ -171,12 +214,31 @@ class Handlers:
         return self.decide(stderr, cwd).result
 
     def _allow_remediation(self, action: str) -> tuple[bool, str]:
+        if const.AUTOFIX and action == "safe_fix_network":
+            if not bool(const.ALLOW_SAFE_RESET):
+                allowed, reason = False, "action requires --safe-reset in auto-fix mode"
+                _emit_remediation_event(action, "blocked", {"reason": reason})
+                return allowed, reason
+        if const.AUTOFIX and action == "destructive_reset":
+            if not bool(const.ALLOW_DESTRUCTIVE_RESET):
+                allowed, reason = False, "action requires --destructive-reset in auto-fix mode"
+                _emit_remediation_event(action, "blocked", {"reason": reason})
+                return allowed, reason
+
         allowed, reason = can_run_remediation(
             action=action,
             ci_mode=bool(const.CI_MODE),
             autofix=bool(const.AUTOFIX),
             interactive=not bool(const.CI_MODE),
         )
+        if not allowed and const.AUTOFIX:
+            if action == "safe_fix_network" and bool(const.ALLOW_SAFE_RESET):
+                allowed, reason = True, ""
+            elif (
+                action == "destructive_reset"
+                and bool(const.ALLOW_DESTRUCTIVE_RESET)
+            ):
+                allowed, reason = True, ""
         outcome = "allowed" if allowed else "blocked"
         detail  = {"reason": reason} if reason else {}
         _emit_remediation_event(action, outcome, detail)
@@ -197,7 +259,7 @@ class Handlers:
         _emit_remediation_event(action, "simulated", detail)
         return True, result
 
-    def dubious_ownership(self, cwd: str) -> StepResult:
+    def dubious_ownership(self, stderr: str, cwd: str) -> StepResult:
         """
         Handle 'dubious ownership' by asking to add
         safe.directory to git config
@@ -207,8 +269,25 @@ class Handlers:
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
+        matched = re.search(r"safe\.directory\s+([^\n\r]+)", stderr)
+        suggested = ""
+        if matched is not None:
+            suggested = matched.group(1).strip().strip("'\"")
+        targets: list[str] = []
+        if suggested:
+            targets.append(suggested)
+        targets.append(str(Path(cwd).resolve()))
+        targets.append(cwd)
+        dedup_targets: list[str] = []
+        seen = set()
+        for item in targets:
+            token = item.strip()
+            if not token or token in seen:
+                continue
+            seen.add(token)
+            dedup_targets.append(token)
         prompt = wrap("git reported dubious ownership "
-                 f"for repository at {cwd!r}. Mark this "
+                 f"for repository at {dedup_targets[0]!r}. Mark this "
                  "directory as safe? [y/n]")
 
         if not const.AUTOFIX and not intent(prompt, "y", "return"):
@@ -217,18 +296,23 @@ class Handlers:
 
         simulated, result = self._simulate_remediation(
             action="git_safe_directory",
-            result=StepResult.OK,
+            result=StepResult.RETRY,
             note="would run git config --global --add safe.directory",
         )
         if simulated: return result
 
-        cmd = ["git", "config", "--global", "--add",
-               "safe.directory", cwd]
-        cp  = _run(cmd, cwd)
-        if cp.returncode == 0:
+        failed = False
+        for target in dedup_targets:
+            cmd = ["git", "config", "--global", "--add",
+                   "safe.directory", target]
+            cp = _run(cmd, cwd)
+            if cp.returncode != 0:
+                failed = True
+                break
+        if not failed:
             _emit_remediation_event("git_safe_directory", "success")
             self.success("marked directory as safe")
-            return StepResult.OK
+            return StepResult.RETRY
         _emit_remediation_event("git_safe_directory", "failed")
         self.warn("failed to mark safe directory; see git "
                   "output for details")
@@ -275,7 +359,7 @@ class Handlers:
         # run diagnostics
         try:
             cmd   = "git fsck --full"
-            cmd_m = color(cmd, INFO)
+            cmd_m = cmd if const.CI_MODE else color(cmd, INFO)
             self.prompt(f"running {cmd_m} for diagnostics...")
             cp          = _run(cmd.split(), cwd)
             diagnostics = cp.stdout + "\n" + cp.stderr
@@ -318,10 +402,17 @@ class Handlers:
                     f"auto-repair to resolve {issue}"))
                 opt = "2"
             else:
-                self.prompt(auto("destructive reset "
-                    "disabled by policy; skipping and "
-                    "continuing"))
-                opt = "4"
+                can_safe, _ = self._allow_remediation(
+                              "safe_fix_network")
+                if can_safe:
+                    self.prompt(auto("destructive reset disabled; "
+                        "attempting safe network repair"))
+                    opt = "3"
+                else:
+                    self.prompt(auto("destructive reset "
+                        "disabled by policy; skipping and "
+                        "continuing"))
+                    opt = "4"
 
         if opt == "1":
             allowed, reason = self._allow_remediation(
@@ -375,14 +466,127 @@ class Handlers:
             if not allowed:
                 self.warn(reason)
                 return StepResult.FAIL
-            # Not implemented. It is supposed to
-            # (1) create a backup of the project
-            # (2) delete the project
-            # (3) clone the project
-            # (4) update the cloned project using the
-            #     backed-up project
-            self.warn("ERROR: method not implemented")
-            return StepResult.FAIL
+            cwd_path = Path(cwd).resolve()
+            backup_dir = _timestamped_backup_name(cwd_path)
+            ts = time.strftime("%Y%m%d_%H%M%S")
+            clone_dir = cwd_path.parent / f"{cwd_path.name}-reclone-{ts}"
+            simulated, result = self._simulate_remediation(
+                action="safe_fix_network",
+                result=StepResult.RETRY,
+                note=f"would backup {cwd_path} and refresh git metadata via clone",
+            )
+            if simulated:
+                return result
+            try:
+                cp_remote = _run(
+                    ["git", "remote", "get-url", "origin"],
+                    cwd,
+                    check=True,
+                )
+                remote_url = (cp_remote.stdout or "").strip()
+                cp_branch = _run(
+                    ["git", "branch", "--show-current"],
+                    cwd,
+                )
+                branch = (cp_branch.stdout or "").strip()
+                if not remote_url:
+                    self.warn("remote origin URL is not configured")
+                    _emit_remediation_event(
+                        "safe_fix_network",
+                        "failed",
+                        {"reason": "missing origin remote url"},
+                    )
+                    return StepResult.FAIL
+
+                self.prompt(f"creating backup at {backup_dir}")
+                _safe_copytree(cwd_path, backup_dir)
+
+                self.prompt("cloning fresh repository copy for metadata recovery...")
+                clone_errors: list[str] = []
+                clone_urls = [remote_url]
+                fallback_url = _https_fallback_remote(remote_url)
+                if fallback_url and fallback_url != remote_url:
+                    clone_urls.append(fallback_url)
+                clone_ok = False
+                used_remote = remote_url
+                for candidate_url in clone_urls:
+                    try:
+                        _run(
+                            ["git", "clone", candidate_url, str(clone_dir)],
+                            str(cwd_path.parent),
+                            check=True,
+                        )
+                        used_remote = candidate_url
+                        clone_ok = True
+                        break
+                    except Exception as clone_exc:
+                        clone_errors.append(f"{candidate_url}: {clone_exc}")
+                if not clone_ok:
+                    self.warn("safe network repair clone failed for all remote candidates")
+                    for step_text in _safe_reset_manual_steps(
+                        remote_url=remote_url,
+                        cwd=cwd_path,
+                        backup_dir=backup_dir,
+                        branch=branch,
+                    ):
+                        self.warn(step_text)
+                    _emit_remediation_event(
+                        "safe_fix_network",
+                        "failed",
+                        {
+                            "reason": "clone failed",
+                            "remote": remote_url,
+                            "attempts": " | ".join(clone_errors),
+                        },
+                    )
+                    return StepResult.FAIL
+                if branch:
+                    _run(["git", "-C", str(clone_dir), "checkout", branch], str(cwd_path.parent), check=False)
+
+                # Replace corrupted .git metadata with a fresh clone copy.
+                git_dir = cwd_path / ".git"
+                if git_dir.exists():
+                    shutil.rmtree(git_dir)
+                shutil.copytree(clone_dir / ".git", git_dir)
+
+                # Restore backed-up working files on top of refreshed metadata.
+                for item in backup_dir.iterdir():
+                    if item.name == ".git":
+                        continue
+                    dest = cwd_path / item.name
+                    if item.is_dir():
+                        shutil.copytree(item, dest, dirs_exist_ok=True)
+                    else:
+                        shutil.copy2(item, dest)
+
+                _run(["git", "add", "."], cwd, check=False)
+                try:
+                    shutil.rmtree(backup_dir, ignore_errors=False)
+                except Exception as cleanup_exc:
+                    logger.exception("safe network backup cleanup failed: %s", cleanup_exc)
+                    self.warn(f"safe reset succeeded but backup cleanup failed: {backup_dir}")
+                _emit_remediation_event(
+                    "safe_fix_network",
+                    "success",
+                    {
+                        "remote": used_remote,
+                        "branch": branch or "<detached>",
+                        "backup": str(backup_dir),
+                    },
+                )
+                return StepResult.RETRY
+            except Exception as e:
+                logger.exception("safe network fix failed: %s", e)
+                _emit_remediation_event(
+                    "safe_fix_network",
+                    "failed",
+                    {"reason": str(e)},
+                )
+                self.warn("safe network repair failed")
+                return StepResult.FAIL
+            finally:
+                if clone_dir.exists():
+                    shutil.rmtree(clone_dir, ignore_errors=True)
         if opt == "4":
             allowed, reason = self._allow_remediation(
                               "skip_continue")
@@ -982,8 +1186,8 @@ class Handlers:
         suggestion = "Check network"
         if _type == 2:
             reason = "invalid or non-existent Git remote"
-            cmd = color("git remote set-url origin "
-                + "<correct-url>", INFO)
+            cmd_text = "git remote set-url origin <correct-url>"
+            cmd = cmd_text if const.CI_MODE else color(cmd_text, INFO)
             suggestion = f"Run {cmd}"
         else: reason = "network/connectivity problem"
 

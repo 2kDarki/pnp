@@ -65,6 +65,8 @@ def _runtime_flags(**overrides: object):
         "DRY_RUN": const.DRY_RUN,
         "CI_MODE": const.CI_MODE,
         "GH_REPO": const.GH_REPO,
+        "ALLOW_SAFE_RESET": const.ALLOW_SAFE_RESET,
+        "ALLOW_DESTRUCTIVE_RESET": const.ALLOW_DESTRUCTIVE_RESET,
     }
     const.sync_runtime_flags(_args(**overrides))
     try:
@@ -74,6 +76,8 @@ def _runtime_flags(**overrides: object):
         const.DRY_RUN = before["DRY_RUN"]
         const.CI_MODE = before["CI_MODE"]
         const.GH_REPO = before["GH_REPO"]
+        const.ALLOW_SAFE_RESET = before["ALLOW_SAFE_RESET"]
+        const.ALLOW_DESTRUCTIVE_RESET = before["ALLOW_DESTRUCTIVE_RESET"]
 
 
 class ResolverRemediationTests(unittest.TestCase):
@@ -83,8 +87,13 @@ class ResolverRemediationTests(unittest.TestCase):
             h = resolver.Handlers()
             with _runtime_flags(auto_fix=True, dry_run=True, ci=True, interactive=False):
                 with patch("pnp.resolver._run") as run_cmd:
-                    result = h.dubious_ownership(tmp)
-            self.assertIs(result, utils.StepResult.OK)
+                    result = h.dubious_ownership(
+                        "fatal: detected dubious ownership in repository "
+                        f"at '{tmp}'\n"
+                        f"git config --global --add safe.directory {tmp}",
+                        tmp,
+                    )
+            self.assertIs(result, utils.StepResult.RETRY)
             run_cmd.assert_not_called()
 
             events = Path(tmp) / "events.jsonl"
@@ -136,6 +145,33 @@ class ResolverRemediationTests(unittest.TestCase):
                 )
             self.assertIs(result, utils.StepResult.RETRY)
             self.assertFalse(lock.exists())
+
+    def test_autofix_safe_fix_network_requires_explicit_flag(self) -> None:
+        h = resolver.Handlers()
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            allowed, reason = h._allow_remediation("safe_fix_network")
+        self.assertFalse(allowed)
+        self.assertIn("--safe-reset", reason)
+
+    def test_autofix_destructive_reset_requires_explicit_flag(self) -> None:
+        h = resolver.Handlers()
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            allowed, reason = h._allow_remediation("destructive_reset")
+        self.assertFalse(allowed)
+        self.assertIn("--destructive-reset", reason)
+
+    def test_autofix_safe_fix_network_allowed_with_flag(self) -> None:
+        h = resolver.Handlers()
+        with _runtime_flags(
+            auto_fix=True,
+            dry_run=False,
+            ci=True,
+            interactive=False,
+            safe_reset=True,
+        ):
+            allowed, reason = h._allow_remediation("safe_fix_network")
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "")
 
 
 if __name__ == "__main__":

@@ -140,7 +140,7 @@ class GitUtilsCoreTests(unittest.TestCase):
         self.assertEqual(out, "ok")
         self.assertEqual(delay_fn.call_count, 2)
 
-    def test_run_git_does_not_retry_for_denylisted_code(self) -> None:
+    def test_run_git_retries_once_for_resolver_retry_even_if_code_denylisted(self) -> None:
         const.sync_runtime_flags(_args(dry_run=False))
         failing = CompletedProcess(
             args=["git", "push"],
@@ -148,20 +148,27 @@ class GitUtilsCoreTests(unittest.TestCase):
             stdout="",
             stderr="fatal: invalid object",
         )
+        success = CompletedProcess(
+            args=["git", "push"],
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
 
         class _Decision:
             def __init__(self, result: utils.StepResult):
                 self.result = result
                 self.classification = type("_C", (), {"code": "PNP_GIT_INVALID_OBJECT"})()
 
-        with patch("pnp.gitutils.subprocess.run", return_value=failing) as run:
+        with patch("pnp.gitutils.subprocess.run", side_effect=[failing, success]) as run:
             with patch("pnp.gitutils.resolver.resolve.decide",
                        return_value=_Decision(utils.StepResult.RETRY)):
                 with patch("pnp.gitutils.time.sleep") as sleep:
-                    rc, _ = gitutils.run_git(["push", "origin"], cwd=".")
-        self.assertEqual(rc, 1)
-        self.assertEqual(run.call_count, 1)
-        sleep.assert_not_called()
+                    rc, out = gitutils.run_git(["push", "origin"], cwd=".")
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "ok")
+        self.assertEqual(run.call_count, 2)
+        self.assertGreaterEqual(sleep.call_count, 1)
 
     def test_run_git_stops_when_timeout_budget_exhausted(self) -> None:
         const.sync_runtime_flags(_args(dry_run=False))

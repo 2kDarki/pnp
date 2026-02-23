@@ -285,14 +285,29 @@ def gen_changelog(path: str, since: str | None,
                   dry_run: str | None,
                   until: str = "HEAD") -> str:
     rng  = f"{since}..{until}" if since else until
-    cmd  = ["git", "log", "--pretty=format:%h %s (%an)", rng]
-    proc = subprocess.run(cmd, cwd=path, text=True,
-           capture_output=True)
+    out = ""
+    if const.DRY_RUN:
+        cmd = ["git", "log", "--pretty=format:%h %s (%an)", rng]
+        proc = subprocess.run(
+            cmd,
+            cwd=path,
+            text=True,
+            capture_output=True,
+        )
+        rc = int(proc.returncode)
+        out = (proc.stdout or "").strip()
+        err = (proc.stderr or "").strip()
+    else:
+        from . import gitutils
+        rc, out = gitutils.run_git(
+            ["log", "--pretty=format:%h %s (%an)", rng],
+            cwd=path,
+        )
+        err = out.strip()
+    if rc != 0:
+        raise RuntimeError(f"git log failed: {err}")
 
-    if proc.returncode != 0:
-        raise RuntimeError(f"git log failed: {proc.stderr}")
-
-    out = proc.stdout.strip()
+    out = out.strip()
     if not out: return "- no notable changes\n"
     text = out.splitlines()[0].split()
     if not dry_run:

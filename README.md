@@ -218,6 +218,10 @@ path (positional): Path to the project root (default .)
 
 - `--dry-run`: Show actions without executing
 
+- `--safe-reset`: Explicitly allow safe reset remediation during `--auto-fix`
+
+- `--destructive-reset`: Explicitly allow destructive reset remediation during `--auto-fix`
+
 - `--version`: Show installed `pnp` version
 
 - `--doctor`: Run local preflight checks
@@ -335,7 +339,6 @@ export PNP_REMOTE=origin
 Release process references:
 - `CHANGELOG.md`
 - `docs/release-notes-template.md`
-- `docs/HANDOFF.md`
 
 ## Internal Layout
 

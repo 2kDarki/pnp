@@ -2,9 +2,12 @@
 
 
 from pathlib import Path
+from subprocess import CompletedProcess
+from unittest.mock import patch
 import tempfile
 import unittest
 
+from pnp import _constants as const
 from pnp import utils
 
 
@@ -18,6 +21,33 @@ class _Sink:
 
 
 class UtilsCoreTests(unittest.TestCase):
+    def test_gen_changelog_non_dry_run_uses_gitutils_run_git(self) -> None:
+        with patch.object(const, "DRY_RUN", False):
+            with patch("pnp.gitutils.run_git", return_value=(0, "abc message (me)")) as run_git:
+                with patch("pnp.utils.subprocess.run") as sp_run:
+                    out = utils.gen_changelog(".", since=None, dry_run=None)
+        self.assertIn("message", out)
+        run_git.assert_called_once_with(
+            ["log", "--pretty=format:%h %s (%an)", "HEAD"],
+            cwd=".",
+        )
+        sp_run.assert_not_called()
+
+    def test_gen_changelog_dry_run_uses_subprocess_git_log(self) -> None:
+        cp = CompletedProcess(
+            args=["git", "log"],
+            returncode=0,
+            stdout="abc message (me)\n",
+            stderr="",
+        )
+        with patch.object(const, "DRY_RUN", True):
+            with patch("pnp.gitutils.run_git") as run_git:
+                with patch("pnp.utils.subprocess.run", return_value=cp) as sp_run:
+                    out = utils.gen_changelog(".", since=None, dry_run="dry-run msg")
+        self.assertIn("dry-run msg", out)
+        run_git.assert_not_called()
+        sp_run.assert_called_once()
+
     def test_bump_semver_patch_from_standard_tag(self) -> None:
         self.assertEqual(utils.bump_semver_from_tag("v1.2.3", "patch"), "v1.2.4")
 

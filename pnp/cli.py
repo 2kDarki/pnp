@@ -289,6 +289,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--debug-report", action="store_true")
     p.add_argument("--debug-report-file", default=None)
     p.add_argument("--auto-fix", "-a", action="store_true")
+    p.add_argument("--safe-reset", action="store_true")
+    p.add_argument("--destructive-reset", action="store_true")
     p.add_argument("--dry-run", "-n", action="store_true")
     p.add_argument("--ci", action="store_true")
     p.add_argument("--interactive", "-i", action="store_true")
