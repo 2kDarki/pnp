@@ -356,12 +356,42 @@ class Handlers:
             return result
         cp = _run(["git", "add", "--renormalize", "."], cwd, check=False)
         if cp.returncode != 0:
+            detail = (cp.stderr or cp.stdout or "").strip()
+            lowered = detail.lower()
+            old_git = any_in(
+                "unknown option", "renormalize", "usage: git add", eq=lowered
+            )
+            if old_git:
+                self.warn("git add --renormalize unsupported; using compatibility fallback")
+                fallback = _run(["git", "add", "-A"], cwd, check=False)
+                if fallback.returncode == 0:
+                    _emit_remediation_event(
+                        "renormalize_line_endings",
+                        "success",
+                        {"mode": "fallback_add_all"},
+                    )
+                    self.success("line endings normalized (fallback mode)")
+                    return StepResult.RETRY
+                fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+                _emit_remediation_event(
+                    "renormalize_line_endings",
+                    "failed",
+                    {"reason": fallback_detail or detail},
+                )
+                self.warn("line-ending renormalization failed")
+                if fallback_detail:
+                    self.warn(f"git add -A failed: {fallback_detail[:220]}")
+                self.warn("manual steps: set .gitattributes to '* text=auto', then run 'git add -A' and retry")
+                return StepResult.FAIL
             _emit_remediation_event(
                 "renormalize_line_endings",
                 "failed",
-                {"reason": (cp.stderr or cp.stdout or "").strip()},
+                {"reason": detail},
             )
             self.warn("line-ending renormalization failed")
+            if detail:
+                self.warn(f"git add --renormalize . failed: {detail[:220]}")
+            self.warn("manual steps: run 'git add --renormalize .' then retry pnp")
             return StepResult.FAIL
         _emit_remediation_event("renormalize_line_endings", "success")
         self.success("line endings renormalized")

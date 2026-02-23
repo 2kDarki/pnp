@@ -163,6 +163,34 @@ class ResolverRemediationTests(unittest.TestCase):
             calls = [call.args[0] for call in run_cmd.call_args_list]
             self.assertTrue(any(cmd[:4] == ["git", "add", "--renormalize", "."] for cmd in calls))
 
+    def test_line_endings_autofix_falls_back_when_renormalize_unsupported(self) -> None:
+        h = resolver.Handlers()
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                         capture: bool = True, text: bool = True) -> CompletedProcess:
+                del cwd, check, capture, text
+                if cmd[:4] == ["git", "add", "--renormalize", "."]:
+                    return CompletedProcess(
+                        cmd,
+                        129,
+                        stdout="",
+                        stderr="error: unknown option `renormalize'",
+                    )
+                if cmd[:3] == ["git", "add", "-A"]:
+                    return CompletedProcess(cmd, 0, stdout="", stderr="")
+                return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+                with patch("pnp.resolver._run", side_effect=fake_run) as run_cmd:
+                    result = h.line_endings(
+                        "warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+                        tmp,
+                    )
+            self.assertIs(result, utils.StepResult.RETRY)
+            calls = [call.args[0] for call in run_cmd.call_args_list]
+            self.assertTrue(any(cmd[:4] == ["git", "add", "--renormalize", "."] for cmd in calls))
+            self.assertTrue(any(cmd[:3] == ["git", "add", "-A"] for cmd in calls))
+
     def test_large_file_rejection_autofix_tracks_lfs_and_amends(self) -> None:
         h = resolver.Handlers()
         calls: list[list[str]] = []
