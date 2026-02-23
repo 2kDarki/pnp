@@ -244,6 +244,11 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     # nothing to handle
     if not stderr: return proc.returncode, out
 
+    # Fail-fast contract: in non-interactive mode without
+    # --auto-fix, do not run resolver remediations.
+    if const.CI_MODE and not const.AUTOFIX:
+        return proc.returncode, out
+
     try:
         decision = resolver.resolve.decide(stderr, cwd)
         policy_result = getattr(decision, "result", None)

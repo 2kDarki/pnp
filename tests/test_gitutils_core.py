@@ -71,6 +71,23 @@ class GitUtilsCoreTests(unittest.TestCase):
         self.assertIn("Enumerating objects", out)
         resolve.assert_not_called()
 
+    def test_run_git_fail_fast_in_noninteractive_without_autofix(self) -> None:
+        const.sync_runtime_flags(
+            _args(dry_run=False, ci=True, interactive=False, auto_fix=False)
+        )
+        failing = CompletedProcess(
+            args=["git", "add", "-A"],
+            returncode=1,
+            stdout="",
+            stderr="warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+        )
+        with patch("pnp.gitutils.subprocess.run", return_value=failing):
+            with patch("pnp.gitutils.resolver.resolve.decide") as decide:
+                rc, out = gitutils.run_git(["add", "-A"], cwd=".")
+        self.assertEqual(rc, 1)
+        self.assertIn("LF will be replaced by CRLF", out)
+        decide.assert_not_called()
+
     def test_push_tag_only_does_not_require_branch_push(self) -> None:
         calls: list[list[str]] = []
 

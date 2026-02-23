@@ -471,10 +471,10 @@ class Handlers:
             _emit_remediation_event(
                 action,
                 "success",
-                {"mode": "index_rebuild_then_line_ending_retry"},
+                {"mode": "index_rebuild_then_line_ending_handoff"},
             )
-            self.warn("index rebuilt; line-ending normalization warning remains, retrying")
-            return StepResult.RETRY
+            self.warn("index rebuilt; line-ending normalization warning remains, handing off remediation")
+            return self.line_endings(readd_detail, cwd)
         reason_text = (
             readd_detail
             or (reset_cp.stderr or reset_cp.stdout or "").strip()

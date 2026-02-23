@@ -339,6 +339,35 @@ class ResolverRemediationTests(unittest.TestCase):
         self.assertTrue(any(cmd[:3] == ["git", "reset", "--mixed"] for cmd in calls))
         self.assertTrue(any(cmd[:3] == ["git", "add", "-A"] for cmd in calls))
 
+    def test_index_worktree_mismatch_hands_off_to_line_endings(self) -> None:
+        h = resolver.Handlers()
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            if cmd[:3] == ["git", "reset", "--mixed"]:
+                return CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[:3] == ["git", "add", "-A"]:
+                return CompletedProcess(
+                    cmd,
+                    1,
+                    stdout="",
+                    stderr="warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+                )
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch.object(h, "line_endings", return_value=utils.StepResult.RETRY) as line_endings:
+                with patch("pnp.resolver._run", side_effect=fake_run):
+                    result = h.index_worktree_mismatch(
+                        "error: short read while indexing NUL\n"
+                        "error: unable to index 'NUL'\n"
+                        "fatal: unable to stat 'missing/file.txt': No such file or directory",
+                        ".",
+                    )
+        self.assertIs(result, utils.StepResult.RETRY)
+        line_endings.assert_called_once()
+
     def test_large_file_rejection_autofix_tracks_lfs_and_amends(self) -> None:
         h = resolver.Handlers()
         calls: list[list[str]] = []
