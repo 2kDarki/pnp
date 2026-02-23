@@ -542,6 +542,14 @@ class Handlers:
                     self.success("line-ending staging succeeded (compatibility fallback)")
                     return StepResult.RETRY
                 fallback_detail = (fallback2.stderr or fallback2.stdout or "").strip()
+                if self._is_warning_only_line_ending(fallback_detail):
+                    _emit_remediation_event(
+                        action,
+                        "success",
+                        {"mode": "index_rebuild_autocrlf_override_add_all_warning_only"},
+                    )
+                    self.success("line-ending staging completed (compatibility warnings only)")
+                    return StepResult.RETRY
             _emit_remediation_event(
                 action,
                 "failed",
