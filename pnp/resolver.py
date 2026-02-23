@@ -479,13 +479,46 @@ class Handlers:
                 )
                 self.warn("index rebuilt; line-ending normalization warning remains, handing off remediation")
                 return self.line_endings(readd_detail, cwd)
+            self.warn("index rebuilt but line-ending warning persists after renormalization attempt")
+            self.warn("attempting Windows-safe staging fallback with core.autocrlf=false")
+            fallback = _run(
+                ["git", "-c", "core.autocrlf=false", "add", "--renormalize", "."],
+                cwd,
+                check=False,
+            )
+            if fallback.returncode == 0:
+                _emit_remediation_event(
+                    action,
+                    "success",
+                    {"mode": "index_rebuild_autocrlf_override_renormalize"},
+                )
+                self.success("line-ending staging succeeded with core.autocrlf=false")
+                return StepResult.RETRY
+            fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+            old_git = any_in(
+                "unknown option", "renormalize", "usage: git add", eq=fallback_detail.lower()
+            )
+            if old_git:
+                fallback2 = _run(
+                    ["git", "-c", "core.autocrlf=false", "add", "-A"],
+                    cwd,
+                    check=False,
+                )
+                if fallback2.returncode == 0:
+                    _emit_remediation_event(
+                        action,
+                        "success",
+                        {"mode": "index_rebuild_autocrlf_override_add_all"},
+                    )
+                    self.success("line-ending staging succeeded (compatibility fallback)")
+                    return StepResult.RETRY
+                fallback_detail = (fallback2.stderr or fallback2.stdout or "").strip()
             _emit_remediation_event(
                 action,
                 "failed",
-                {"reason": "line-ending warning persisted after index rebuild"},
+                {"reason": fallback_detail or "line-ending warning persisted after index rebuild"},
             )
-            self.warn("index rebuilt but line-ending warning persists after renormalization attempt")
-            self.warn("manual steps: run 'git add --renormalize .', then retry pnp")
+            self.warn("manual steps: run 'git -c core.autocrlf=false add --renormalize .', then retry pnp")
             self.warn("if this still fails, run: git pnp -a --safe-reset")
             return StepResult.FAIL
         reason_text = (
