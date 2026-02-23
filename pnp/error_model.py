@@ -47,6 +47,7 @@ DEPRECATED_ERROR_CODE_ALIASES: dict[str, str] = {
     "PNP_RES_UPSTREAM_MISSING": "PNP_GIT_UPSTREAM_MISSING",
     "PNP_RES_TLS_FAIL": "PNP_NET_TLS_FAIL",
     "PNP_RES_TIMEOUT": "PNP_NET_TIMEOUT",
+    "PNP_RES_INDEX_WORKTREE_MISMATCH": "PNP_GIT_INDEX_WORKTREE_MISMATCH",
 }
 
 ERROR_CODE_POLICY: dict[str, dict[str, Any]] = {
@@ -152,6 +153,10 @@ ERROR_CODE_POLICY: dict[str, dict[str, Any]] = {
     },
     "PNP_GIT_LINE_ENDING_NORMALIZATION": {
         "severity": "warn",
+        "category": "git",
+    },
+    "PNP_GIT_INDEX_WORKTREE_MISMATCH": {
+        "severity": "error",
         "category": "git",
     },
     "PNP_GIT_DETACHED_HEAD": {

@@ -113,6 +113,13 @@ LINE_ENDING_NEEDLES: tuple[str, ...] = (
     "crlf will be replaced by lf",
 )
 
+INDEX_WORKTREE_MISMATCH_NEEDLES: tuple[str, ...] = (
+    "short read while indexing",
+    "failed to insert into database",
+    "unable to index",
+    "unable to stat",
+)
+
 LOCK_CONTENTION_NEEDLES: tuple[str, ...] = (
     "another git process seems to be running",
     "unable to create '.git/index.lock'",
@@ -188,6 +195,11 @@ CLASSIFICATION_RULES: tuple[ClassificationRule, ...] = (
         code="PNP_GIT_DIRTY_WORKTREE",
         handler="dirty_worktree",
         matcher=_match_any(DIRTY_WORKTREE_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_INDEX_WORKTREE_MISMATCH",
+        handler="index_worktree_mismatch",
+        matcher=_match_any(INDEX_WORKTREE_MISMATCH_NEEDLES),
     ),
     ClassificationRule(
         code="PNP_GIT_LINE_ENDING_NORMALIZATION",

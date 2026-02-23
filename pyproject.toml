@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "git-pnp"
-version = "2.3.4"
+version = "2.3.5"
 description = "A robust Python CLI tool to manage Git workflows with intelligent commit, push, tagging, changelog generation, GitHub releases, hook execution, and error handling."
 readme = "README.md"
 license = {text = "MIT"}

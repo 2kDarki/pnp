@@ -357,26 +357,14 @@ class Handlers:
         cp = _run(["git", "add", "--renormalize", "."], cwd, check=False)
         if cp.returncode != 0:
             detail = (cp.stderr or cp.stdout or "").strip()
-            lowered = detail.lower()
-            index_inconsistent = any_in(
-                "unable to index",
-                "failed to insert into database",
-                "unable to stat",
-                "short read while indexing",
-                eq=lowered,
+            index_result = self._recover_index_worktree_mismatch(
+                detail,
+                cwd,
+                "renormalize_line_endings",
             )
-            if index_inconsistent:
-                self.warn("index/worktree mismatch detected during renormalization; attempting index rebuild fallback")
-                reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
-                readd_cp = _run(["git", "add", "-A"], cwd, check=False)
-                if reset_cp.returncode == 0 and readd_cp.returncode == 0:
-                    _emit_remediation_event(
-                        "renormalize_line_endings",
-                        "success",
-                        {"mode": "primary_reset_mixed_add_all"},
-                    )
-                    self.success("line endings normalized (index rebuild fallback)")
-                    return StepResult.RETRY
+            if index_result is not None:
+                return index_result
+            lowered = detail.lower()
             old_git = any_in(
                 "unknown option", "renormalize", "usage: git add", eq=lowered
             )
@@ -392,26 +380,13 @@ class Handlers:
                     self.success("line endings normalized (fallback mode)")
                     return StepResult.RETRY
                 fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
-                fallback_lower = fallback_detail.lower()
-                index_inconsistent = any_in(
-                    "unable to index",
-                    "failed to insert into database",
-                    "unable to stat",
-                    "short read while indexing",
-                    eq=fallback_lower,
+                index_result = self._recover_index_worktree_mismatch(
+                    fallback_detail or detail,
+                    cwd,
+                    "renormalize_line_endings",
                 )
-                if index_inconsistent:
-                    self.warn("index/worktree mismatch detected; attempting index rebuild fallback")
-                    reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
-                    readd_cp = _run(["git", "add", "-A"], cwd, check=False)
-                    if reset_cp.returncode == 0 and readd_cp.returncode == 0:
-                        _emit_remediation_event(
-                            "renormalize_line_endings",
-                            "success",
-                            {"mode": "fallback_reset_mixed_add_all"},
-                        )
-                        self.success("line endings normalized (index rebuild fallback)")
-                        return StepResult.RETRY
+                if index_result is not None:
+                    return index_result
                 _emit_remediation_event(
                     "renormalize_line_endings",
                     "failed",
@@ -436,6 +411,57 @@ class Handlers:
         _emit_remediation_event("renormalize_line_endings", "success")
         self.success("line endings renormalized")
         return StepResult.RETRY
+
+    def _is_index_worktree_mismatch(self, stderr: str) -> bool:
+        lowered = stderr.lower()
+        return any_in(
+            "short read while indexing",
+            "failed to insert into database",
+            "unable to index",
+            "unable to stat",
+            eq=lowered,
+        )
+
+    def _recover_index_worktree_mismatch(
+        self,
+        stderr: str,
+        cwd: str,
+        action: str,
+    ) -> StepResult | None:
+        if not self._is_index_worktree_mismatch(stderr):
+            return None
+        allowed, reason = self._allow_remediation("index_rebuild_restage")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.warn("index/worktree mismatch detected; attempting index rebuild fallback")
+        simulated, result = self._simulate_remediation(
+            action="index_rebuild_restage",
+            result=StepResult.RETRY,
+            note="would run git reset --mixed && git add -A",
+        )
+        if simulated:
+            return result
+        reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
+        readd_cp = _run(["git", "add", "-A"], cwd, check=False)
+        if reset_cp.returncode == 0 and readd_cp.returncode == 0:
+            _emit_remediation_event(
+                action,
+                "success",
+                {"mode": "index_rebuild_restage"},
+            )
+            self.success("index rebuilt and files restaged")
+            return StepResult.RETRY
+        reason_text = (
+            (readd_cp.stderr or readd_cp.stdout or "").strip()
+            or (reset_cp.stderr or reset_cp.stdout or "").strip()
+            or stderr
+        )
+        _emit_remediation_event(action, "failed", {"reason": reason_text})
+        self.warn("index rebuild fallback failed")
+        self.warn("manual steps: run 'git reset --mixed', then 'git add -A', then retry pnp")
+        self.warn("if this still fails, run: git pnp -a --safe-reset")
+        return StepResult.FAIL
 
     def dubious_ownership(self, stderr: str, cwd: str) -> StepResult:
         """
@@ -1871,6 +1897,18 @@ class Handlers:
             self.warn(reason)
             return StepResult.FAIL
         self.abort("aborting due to line-ending normalization issue")
+        return StepResult.FAIL
+
+    def index_worktree_mismatch(self, stderr: str, cwd: str) -> StepResult:
+        """Handle index/worktree mismatch regardless of triggering workflow step."""
+        result = self._recover_index_worktree_mismatch(
+            stderr,
+            cwd,
+            action="index_rebuild_restage",
+        )
+        if result is not None:
+            return result
+        self.warn("index/worktree mismatch detected but recovery did not apply")
         return StepResult.FAIL
 
     def ref_conflict(self, stderr: str, cwd: str) -> StepResult:

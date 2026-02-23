@@ -146,6 +146,13 @@ REMEDIATION_POLICY: dict[str, RemediationRule] = {
         requires_interactive=False,
         requires_confirmation=False,
     ),
+    "index_rebuild_restage": RemediationRule(
+        destructive=False,
+        allow_ci=True,
+        allow_autofix=True,
+        requires_interactive=False,
+        requires_confirmation=False,
+    ),
     "configure_git_lfs_tracking": RemediationRule(
         destructive=False,
         allow_ci=True,

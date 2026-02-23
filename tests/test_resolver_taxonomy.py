@@ -105,6 +105,16 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.code, "PNP_GIT_LINE_ENDING_NORMALIZATION")
         self.assertEqual(cls.handler, "line_endings")
 
+    def test_classify_index_worktree_mismatch(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify(
+            "error: short read while indexing NUL\n"
+            "error: unable to index 'NUL'\n"
+            "fatal: unable to stat 'missing/file.txt': No such file or directory"
+        )
+        self.assertEqual(cls.code, "PNP_GIT_INDEX_WORKTREE_MISMATCH")
+        self.assertEqual(cls.handler, "index_worktree_mismatch")
+
     def test_classify_ref_conflict(self) -> None:
         h = resolver.Handlers()
         cls = h.classify("error: cannot lock ref 'refs/tags/v1.0.0': reference already exists")
@@ -177,6 +187,11 @@ class ResolverTaxonomyTests(unittest.TestCase):
             (
                 "warning: in the working copy of 'x.py', LF will be replaced by CRLF",
                 "PNP_GIT_LINE_ENDING_NORMALIZATION",
+            ),
+            (
+                "error: short read while indexing NUL\nerror: unable to index 'NUL'\n"
+                "fatal: unable to stat 'missing/file.txt': No such file or directory",
+                "PNP_GIT_INDEX_WORKTREE_MISMATCH",
             ),
             ("fatal: You are not currently on a branch.", "PNP_GIT_DETACHED_HEAD"),
             ("error: cannot lock ref 'refs/tags/v1.0.0': reference already exists", "PNP_GIT_REF_CONFLICT"),

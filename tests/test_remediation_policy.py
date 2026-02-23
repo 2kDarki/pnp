@@ -95,6 +95,16 @@ class RemediationPolicyTests(unittest.TestCase):
         self.assertTrue(allowed_renorm)
         self.assertEqual(reason_renorm, "")
 
+    def test_index_rebuild_action_allowed_in_ci_autofix(self) -> None:
+        allowed, reason = can_run_remediation(
+            action="index_rebuild_restage",
+            ci_mode=True,
+            autofix=True,
+            interactive=False,
+        )
+        self.assertTrue(allowed)
+        self.assertEqual(reason, "")
+
     def test_large_file_actions_allowed_in_ci_autofix(self) -> None:
         allowed_lfs, reason_lfs = can_run_remediation(
             action="configure_git_lfs_tracking",
