@@ -212,7 +212,12 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
 
     # Successful git commands often emit progress/warnings on
     # stderr. Treat non-zero return codes as failure signals.
-    if proc.returncode == 0: return 0, out
+    if proc.returncode == 0:
+        try:
+            resolver.resolve.maybe_pop_stash(cwd)
+        except Exception:
+            pass
+        return 0, out
 
     # nothing to handle
     if not stderr: return proc.returncode, out

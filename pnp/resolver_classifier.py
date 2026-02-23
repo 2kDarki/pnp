@@ -67,6 +67,33 @@ AUTH_ERROR_NEEDLES: tuple[str, ...] = (
     "repository not found",
 )
 
+LARGE_FILE_NEEDLES: tuple[str, ...] = (
+    "exceeds github's file size limit",
+    "exceeds gitlab's file size limit",
+    "file size limit of 100.00 mb",
+    "file size limit of",
+)
+
+HOOK_DECLINED_NEEDLES: tuple[str, ...] = (
+    "pre-push hook declined",
+    "pre-commit hook declined",
+    "hook declined",
+)
+
+SUBMODULE_INCONSISTENT_NEEDLES: tuple[str, ...] = (
+    "upload-pack: not our ref",
+    "not our ref",
+    "in a submodule path",
+    "no submodule mapping found in .gitmodules",
+)
+
+PROTECTED_BRANCH_NEEDLES: tuple[str, ...] = (
+    "protected branch update failed",
+    "gh006",
+    "required status check",
+    "approving review is required",
+)
+
 NON_FAST_FORWARD_NEEDLES: tuple[str, ...] = (
     "non-fast-forward",
     "fetch first",
@@ -74,11 +101,29 @@ NON_FAST_FORWARD_NEEDLES: tuple[str, ...] = (
     "tip of your current branch is behind",
 )
 
+DIRTY_WORKTREE_NEEDLES: tuple[str, ...] = (
+    "would be overwritten by merge",
+    "please commit your changes or stash them before you merge",
+    "please commit your changes or stash them before you rebase",
+    "your local changes to the following files would be overwritten",
+)
+
+LINE_ENDING_NEEDLES: tuple[str, ...] = (
+    "lf will be replaced by crlf",
+    "crlf will be replaced by lf",
+)
+
 LOCK_CONTENTION_NEEDLES: tuple[str, ...] = (
     "another git process seems to be running",
     "unable to create '.git/index.lock'",
     "unable to create '.git/shallow.lock'",
     "index.lock",
+)
+
+DETACHED_HEAD_NEEDLES: tuple[str, ...] = (
+    "you are not currently on a branch",
+    "you are in 'detached head' state",
+    "detached head",
 )
 
 REF_CONFLICT_NEEDLES: tuple[str, ...] = (
@@ -115,9 +160,44 @@ CLASSIFICATION_RULES: tuple[ClassificationRule, ...] = (
         matcher=_match_any(AUTH_ERROR_NEEDLES),
     ),
     ClassificationRule(
+        code="PNP_NET_LARGE_FILE_REJECTED",
+        handler="large_file_rejection",
+        matcher=_match_any(LARGE_FILE_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_HOOK_DECLINED",
+        handler="hook_declined",
+        matcher=_match_any(HOOK_DECLINED_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_SUBMODULE_INCONSISTENT",
+        handler="submodule_inconsistent",
+        matcher=_match_any(SUBMODULE_INCONSISTENT_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_PROTECTED_BRANCH",
+        handler="protected_branch",
+        matcher=_match_any(PROTECTED_BRANCH_NEEDLES),
+    ),
+    ClassificationRule(
         code="PNP_GIT_NON_FAST_FORWARD",
-        handler="repo_corruption",
+        handler="diverged_branch",
         matcher=_match_any(NON_FAST_FORWARD_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_DIRTY_WORKTREE",
+        handler="dirty_worktree",
+        matcher=_match_any(DIRTY_WORKTREE_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_LINE_ENDING_NORMALIZATION",
+        handler="line_endings",
+        matcher=_match_any(LINE_ENDING_NEEDLES),
+    ),
+    ClassificationRule(
+        code="PNP_GIT_DETACHED_HEAD",
+        handler="detached_head",
+        matcher=_match_any(DETACHED_HEAD_NEEDLES),
     ),
     ClassificationRule(
         code="PNP_GIT_REF_CONFLICT",

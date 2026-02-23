@@ -3,6 +3,7 @@
 
 from contextlib import contextmanager
 from unittest.mock import patch
+from subprocess import CompletedProcess
 from argparse import Namespace
 from pathlib import Path
 import tempfile
@@ -81,6 +82,285 @@ def _runtime_flags(**overrides: object):
 
 
 class ResolverRemediationTests(unittest.TestCase):
+    def test_protected_branch_autofix_creates_feature_branch(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del check, capture, text, cwd
+            calls.append(cmd)
+            if cmd[:2] == ["git", "remote"]:
+                return CompletedProcess(cmd, 0, stdout="origin\n", stderr="")
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run):
+                result = h.protected_branch(
+                    "remote: error: GH006: Protected branch update failed for refs/heads/main",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.OK)
+        self.assertTrue(any(cmd[:3] == ["git", "checkout", "-b"] for cmd in calls))
+        self.assertTrue(any(cmd[:3] == ["git", "push", "-u"] for cmd in calls))
+
+    def test_dirty_worktree_autostash_retries_and_pops_on_success(self) -> None:
+        h = resolver.Handlers()
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run) as run_cmd:
+                result = h.dirty_worktree(
+                    "error: Your local changes to the following files would be overwritten by merge",
+                    ".",
+                )
+                self.assertIs(result, utils.StepResult.RETRY)
+                h.maybe_pop_stash(".")
+        calls = [call.args[0] for call in run_cmd.call_args_list]
+        self.assertTrue(any(cmd[:3] == ["git", "stash", "push"] for cmd in calls))
+        self.assertTrue(any(cmd[:3] == ["git", "stash", "pop"] for cmd in calls))
+
+    def test_detached_head_autofix_creates_recovery_branch(self) -> None:
+        h = resolver.Handlers()
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run) as run_cmd:
+                result = h.detached_head(
+                    "fatal: You are not currently on a branch.",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.RETRY)
+        calls = [call.args[0] for call in run_cmd.call_args_list]
+        self.assertTrue(any(cmd[:3] == ["git", "checkout", "-b"] for cmd in calls))
+
+    def test_line_endings_autofix_creates_gitattributes_and_renormalizes(self) -> None:
+        h = resolver.Handlers()
+        with tempfile.TemporaryDirectory() as tmp:
+            def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                         capture: bool = True, text: bool = True) -> CompletedProcess:
+                del cwd, check, capture, text
+                return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+                with patch("pnp.resolver._run", side_effect=fake_run) as run_cmd:
+                    result = h.line_endings(
+                        "warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+                        tmp,
+                    )
+            self.assertIs(result, utils.StepResult.RETRY)
+            attrs = Path(tmp) / ".gitattributes"
+            self.assertTrue(attrs.exists())
+            self.assertIn("* text=auto", attrs.read_text(encoding="utf-8"))
+            calls = [call.args[0] for call in run_cmd.call_args_list]
+            self.assertTrue(any(cmd[:4] == ["git", "add", "--renormalize", "."] for cmd in calls))
+
+    def test_large_file_rejection_autofix_tracks_lfs_and_amends(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run):
+                result = h.large_file_rejection(
+                    "remote: error: File build/app.bin is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertTrue(any(cmd[:3] == ["git", "lfs", "version"] for cmd in calls))
+        self.assertTrue(any(cmd[:3] == ["git", "lfs", "track"] for cmd in calls))
+        self.assertTrue(any(cmd[:3] == ["git", "commit", "--amend"] for cmd in calls))
+
+    def test_diverged_branch_autofix_runs_pull_rebase(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            if cmd[:4] == ["git", "branch", "--show-current"]:
+                return CompletedProcess(cmd, 0, stdout="main\n", stderr="")
+            if cmd[:2] == ["git", "remote"]:
+                return CompletedProcess(cmd, 0, stdout="origin\n", stderr="")
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run):
+                result = h.diverged_branch(
+                    "! [rejected] main -> main (non-fast-forward)",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertTrue(any(cmd[:3] == ["git", "pull", "--rebase"] for cmd in calls))
+
+    def test_diverged_branch_conflict_opens_shell_in_interactive_mode(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            if cmd[:4] == ["git", "branch", "--show-current"]:
+                return CompletedProcess(cmd, 0, stdout="main\n", stderr="")
+            if cmd[:2] == ["git", "remote"]:
+                return CompletedProcess(cmd, 0, stdout="origin\n", stderr="")
+            if cmd[:3] == ["git", "pull", "--rebase"]:
+                return CompletedProcess(
+                    cmd,
+                    1,
+                    stdout="",
+                    stderr="CONFLICT (content): Merge conflict in README.md",
+                )
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+            with patch("builtins.input", return_value="1"):
+                with patch("pnp.resolver.get_shell", return_value="/bin/sh"):
+                    with patch("pnp.resolver._run", side_effect=fake_run):
+                        result = h.diverged_branch(
+                            "! [rejected] main -> main (non-fast-forward)",
+                            ".",
+                        )
+        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertTrue(any(cmd == ["/bin/sh"] for cmd in calls))
+
+    def test_hook_declined_can_retry_push_with_no_verify(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            if cmd[:4] == ["git", "branch", "--show-current"]:
+                return CompletedProcess(cmd, 0, stdout="main\n", stderr="")
+            if cmd[:2] == ["git", "remote"]:
+                return CompletedProcess(cmd, 0, stdout="origin\n", stderr="")
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+            with patch("builtins.input", return_value="1"):
+                with patch("pnp.resolver._run", side_effect=fake_run):
+                    result = h.hook_declined("error: pre-push hook declined", ".")
+        self.assertIs(result, utils.StepResult.OK)
+        self.assertTrue(any(cmd[:4] == ["git", "push", "--no-verify", "origin"] for cmd in calls))
+
+    def test_hook_declined_surfaces_extracted_failure_hints(self) -> None:
+        h = resolver.Handlers()
+        sample = (
+            "error: pre-push hook declined\n"
+            "running pytest -q\n"
+            "FAILED tests/test_api.py::test_ping - AssertionError\n"
+        )
+        with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+            with patch("builtins.input", return_value="3"):
+                with patch.object(h, "warn") as warn_mock:
+                    with self.assertRaises(SystemExit):
+                        h.hook_declined(sample, ".")
+        joined = "\n".join(str(call.args[0]) for call in warn_mock.call_args_list if call.args)
+        self.assertIn("detected hook:", joined)
+        self.assertIn("suspected failing command: pytest -q", joined)
+        self.assertIn("first failure signal:", joined)
+
+    def test_hook_declined_emits_structured_hook_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            resolver.configure_logger(Path(tmp))
+            h = resolver.Handlers()
+            sample = (
+                "error: pre-push hook declined\n"
+                "running pytest -q\n"
+                "FAILED tests/test_api.py::test_ping - AssertionError\n"
+            )
+            calls: list[list[str]] = []
+
+            def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                         capture: bool = True, text: bool = True) -> CompletedProcess:
+                del cwd, check, capture, text
+                calls.append(cmd)
+                if cmd[:4] == ["git", "branch", "--show-current"]:
+                    return CompletedProcess(cmd, 0, stdout="main\n", stderr="")
+                if cmd[:2] == ["git", "remote"]:
+                    return CompletedProcess(cmd, 0, stdout="origin\n", stderr="")
+                return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+            with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+                with patch("builtins.input", return_value="1"):
+                    with patch("pnp.resolver._run", side_effect=fake_run):
+                        result = h.hook_declined(sample, tmp)
+            self.assertIs(result, utils.StepResult.OK)
+
+            events = Path(tmp) / "events.jsonl"
+            self.assertTrue(events.exists())
+            rows = [json.loads(x) for x in events.read_text(encoding="utf-8").splitlines()]
+            rem = [e for e in rows if e.get("event_type") == "remediation"]
+            analyses = [
+                e for e in rem
+                if isinstance(e.get("payload"), dict)
+                and e["payload"].get("action") == "hook_failure_analysis"
+            ]
+            self.assertTrue(analyses)
+            detail = analyses[-1]["payload"].get("details", {})
+            self.assertEqual(detail.get("command"), "pytest -q")
+            self.assertIn("pre-push hook declined", str(detail.get("hook")))
+
+    def test_submodule_inconsistent_autofix_runs_sync_update(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run):
+                result = h.submodule_inconsistent(
+                    "fatal: remote error: upload-pack: not our ref deadbeef",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertTrue(any(cmd[:4] == ["git", "submodule", "sync", "--recursive"] for cmd in calls))
+        self.assertTrue(any(cmd[:5] == ["git", "submodule", "update", "--init", "--recursive"] for cmd in calls))
+
+    def test_submodule_inconsistent_interactive_fetch_prune(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        stderr = "fatal: remote error: upload-pack: not our ref deadbeef in submodule path 'libs/core'"
+        with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+            with patch("builtins.input", return_value="2"):
+                with patch("pnp.resolver._run", side_effect=fake_run):
+                    result = h.submodule_inconsistent(stderr, ".")
+        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertTrue(
+            any(
+                cmd[:8] == ["git", "-C", "libs/core", "fetch", "--all", "--tags", "--prune"]
+                for cmd in calls
+            )
+        )
+
     def test_dry_run_simulates_safe_directory_remediation(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             resolver.configure_logger(Path(tmp))

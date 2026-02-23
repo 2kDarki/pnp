@@ -51,11 +51,59 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.code, "PNP_NET_AUTH_FAIL")
         self.assertEqual(cls.handler, "auth_failure")
 
+    def test_classify_large_file_rejected(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify(
+            "remote: error: File build/app.bin is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB"
+        )
+        self.assertEqual(cls.code, "PNP_NET_LARGE_FILE_REJECTED")
+        self.assertEqual(cls.handler, "large_file_rejection")
+
+    def test_classify_hook_declined(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify("error: pre-push hook declined")
+        self.assertEqual(cls.code, "PNP_GIT_HOOK_DECLINED")
+        self.assertEqual(cls.handler, "hook_declined")
+
+    def test_classify_submodule_inconsistent(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify("fatal: remote error: upload-pack: not our ref deadbeef")
+        self.assertEqual(cls.code, "PNP_GIT_SUBMODULE_INCONSISTENT")
+        self.assertEqual(cls.handler, "submodule_inconsistent")
+
     def test_classify_non_fast_forward(self) -> None:
         h = resolver.Handlers()
         cls = h.classify("! [rejected] main -> main (non-fast-forward)")
         self.assertEqual(cls.code, "PNP_GIT_NON_FAST_FORWARD")
-        self.assertEqual(cls.handler, "repo_corruption")
+        self.assertEqual(cls.handler, "diverged_branch")
+
+    def test_classify_protected_branch(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify(
+            "remote: error: GH006: Protected branch update failed for refs/heads/main"
+        )
+        self.assertEqual(cls.code, "PNP_GIT_PROTECTED_BRANCH")
+        self.assertEqual(cls.handler, "protected_branch")
+
+    def test_classify_dirty_worktree(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify(
+            "error: Your local changes to the following files would be overwritten by merge"
+        )
+        self.assertEqual(cls.code, "PNP_GIT_DIRTY_WORKTREE")
+        self.assertEqual(cls.handler, "dirty_worktree")
+
+    def test_classify_detached_head(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify("fatal: You are not currently on a branch.")
+        self.assertEqual(cls.code, "PNP_GIT_DETACHED_HEAD")
+        self.assertEqual(cls.handler, "detached_head")
+
+    def test_classify_line_ending_normalization(self) -> None:
+        h = resolver.Handlers()
+        cls = h.classify("warning: in the working copy of 'x.py', LF will be replaced by CRLF")
+        self.assertEqual(cls.code, "PNP_GIT_LINE_ENDING_NORMALIZATION")
+        self.assertEqual(cls.handler, "line_endings")
 
     def test_classify_ref_conflict(self) -> None:
         h = resolver.Handlers()
@@ -111,7 +159,26 @@ class ResolverTaxonomyTests(unittest.TestCase):
             ("fatal: could not read from remote repository https://ghp_secret@github.com/u/r.git", "PNP_NET_REMOTE_URL_INVALID"),
             ("fatal: could not read from remote repository", "PNP_NET_REMOTE_UNREADABLE"),
             ("fatal: Authentication failed for 'https://github.com/u/r.git'", "PNP_NET_AUTH_FAIL"),
+            (
+                "remote: error: File build/app.bin is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB",
+                "PNP_NET_LARGE_FILE_REJECTED",
+            ),
+            ("error: pre-push hook declined", "PNP_GIT_HOOK_DECLINED"),
+            ("fatal: remote error: upload-pack: not our ref deadbeef", "PNP_GIT_SUBMODULE_INCONSISTENT"),
             ("! [rejected] main -> main (non-fast-forward)", "PNP_GIT_NON_FAST_FORWARD"),
+            (
+                "remote: error: GH006: Protected branch update failed for refs/heads/main",
+                "PNP_GIT_PROTECTED_BRANCH",
+            ),
+            (
+                "error: Your local changes to the following files would be overwritten by merge",
+                "PNP_GIT_DIRTY_WORKTREE",
+            ),
+            (
+                "warning: in the working copy of 'x.py', LF will be replaced by CRLF",
+                "PNP_GIT_LINE_ENDING_NORMALIZATION",
+            ),
+            ("fatal: You are not currently on a branch.", "PNP_GIT_DETACHED_HEAD"),
             ("error: cannot lock ref 'refs/tags/v1.0.0': reference already exists", "PNP_GIT_REF_CONFLICT"),
             ("fatal: Unable to create '.git/index.lock': File exists", "PNP_GIT_LOCK_CONTENTION"),
             ("fatal: The current branch main has no upstream branch.", "PNP_GIT_UPSTREAM_MISSING"),

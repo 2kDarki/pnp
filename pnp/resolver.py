@@ -158,6 +158,66 @@ def _emit_remediation_event(
     )
 
 
+def _sanitize_branch_suffix(text: str) -> str:
+    token = text.strip().lower().replace(" ", "-")
+    token = re.sub(r"[^a-z0-9._/-]+", "-", token)
+    token = re.sub(r"-{2,}", "-", token).strip("-")
+    return token or "work"
+
+
+def _extract_large_file_details(stderr: str) -> tuple[str, str, str]:
+    """Best-effort parse of remote large-file rejection payload."""
+    file_match = re.search(
+        r"file\s+([^\s;]+)\s+is\s+([0-9.]+\s*[a-z]+)",
+        stderr,
+        flags=re.IGNORECASE,
+    )
+    limit_match = re.search(
+        r"limit of\s+([0-9.]+\s*[a-z]+)",
+        stderr,
+        flags=re.IGNORECASE,
+    )
+    file_path = file_match.group(1) if file_match else ""
+    file_size = file_match.group(2) if file_match else ""
+    limit = limit_match.group(1) if limit_match else ""
+    return file_path.strip("'\""), file_size, limit
+
+
+def _extract_submodule_path(stderr: str) -> str:
+    """Best-effort parse of submodule path from git stderr."""
+    patterns = (
+        r"in submodule path ['\"]([^'\"]+)['\"]",
+        r"submodule ['\"]([^'\"]+)['\"]",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, stderr, flags=re.IGNORECASE)
+        if match is not None:
+            return match.group(1).strip()
+    return ""
+
+
+def _extract_hook_failure_details(stderr: str) -> tuple[str, str, str]:
+    """Best-effort extraction of hook name, command hint, and failure line."""
+    hook_name = ""
+    command_hint = ""
+    failure_line = ""
+    for line in stderr.splitlines():
+        text = line.strip()
+        if not text:
+            continue
+        if not hook_name and "hook" in text and any_in("pre-push", "pre-commit", eq=text.lower()):
+            hook_name = text
+        if not command_hint:
+            # common hook wrappers print shell command prefixed with $ or >
+            if text.startswith("$ ") or text.startswith("> "):
+                command_hint = text[2:].strip()
+            elif text.lower().startswith("running "):
+                command_hint = text[8:].strip()
+        if not failure_line and any_in("error", "failed", "traceback", "exception", eq=text.lower()):
+            failure_line = text
+    return hook_name, command_hint, failure_line
+
+
 class Handlers:
     """
     Instance with callable interface.
@@ -183,6 +243,7 @@ class Handlers:
         self.abort   = out.abort
         self.last_error: dict[str, str] | None = None
         self.last_decision: PolicyDecision | None = None
+        self._pending_stash_pop: set[str] = set()
 
     def classify(self, stderr: str) -> ErrorClassification:
         """Classify git stderr into stable code/severity/handler."""
@@ -258,6 +319,53 @@ class Handlers:
             detail["note"] = note
         _emit_remediation_event(action, "simulated", detail)
         return True, result
+
+    def maybe_pop_stash(self, cwd: str) -> None:
+        """Pop auto stash after successful retry when scheduled."""
+        path = str(Path(cwd).resolve())
+        if path not in self._pending_stash_pop: return
+        allowed, reason = self._allow_remediation("auto_stash_pop")
+        if not allowed:
+            self.warn(reason)
+            return
+        try:
+            cp = _run(["git", "stash", "pop"], cwd, check=False)
+            if cp.returncode == 0:
+                _emit_remediation_event("auto_stash_pop", "success")
+            else:
+                _emit_remediation_event(
+                    "auto_stash_pop",
+                    "failed",
+                    {"reason": (cp.stderr or cp.stdout or "").strip()},
+                )
+                self.warn("auto stash pop failed; resolve manually")
+        finally:
+            self._pending_stash_pop.discard(path)
+
+    def _renormalize_line_endings(self, cwd: str) -> StepResult:
+        allowed, reason = self._allow_remediation("renormalize_line_endings")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        simulated, result = self._simulate_remediation(
+            action="renormalize_line_endings",
+            result=StepResult.RETRY,
+            note="would run git add --renormalize .",
+        )
+        if simulated:
+            return result
+        cp = _run(["git", "add", "--renormalize", "."], cwd, check=False)
+        if cp.returncode != 0:
+            _emit_remediation_event(
+                "renormalize_line_endings",
+                "failed",
+                {"reason": (cp.stderr or cp.stdout or "").strip()},
+            )
+            self.warn("line-ending renormalization failed")
+            return StepResult.FAIL
+        _emit_remediation_event("renormalize_line_endings", "success")
+        self.success("line endings renormalized")
+        return StepResult.RETRY
 
     def dubious_ownership(self, stderr: str, cwd: str) -> StepResult:
         """
@@ -720,6 +828,109 @@ class Handlers:
                       "Manual fix required")
             return StepResult.FAIL
 
+    def diverged_branch(self, stderr: str, cwd: str) -> StepResult:
+        """Handle non-fast-forward divergence with pull --rebase first."""
+        del stderr
+        self.warn("remote branch is ahead; local branch diverged")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: rerun with --auto-fix or rebase manually")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Run git pull --rebase and retry",
+                "2": "Open shell to resolve manually",
+                "3": "Run legacy backup/sync recovery",
+                "4": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "4"; print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("pull_rebase")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="pull_rebase",
+                result=StepResult.RETRY,
+                note="would run git pull --rebase origin <branch>",
+            )
+            if simulated:
+                return result
+            cp_branch = _run(["git", "branch", "--show-current"], cwd, check=False)
+            branch = (cp_branch.stdout or "").strip()
+            if not branch:
+                self.warn("could not determine current branch for rebase")
+                _emit_remediation_event(
+                    "pull_rebase",
+                    "failed",
+                    {"reason": "missing branch"},
+                )
+                return StepResult.FAIL
+            cp_remote = _run(["git", "remote"], cwd, check=False)
+            remotes = [r.strip() for r in (cp_remote.stdout or "").splitlines() if r.strip()]
+            remote = remotes[0] if remotes else "origin"
+            cp = _run(["git", "pull", "--rebase", remote, branch], cwd, check=False)
+            if cp.returncode == 0:
+                _emit_remediation_event(
+                    "pull_rebase",
+                    "success",
+                    {"remote": remote, "branch": branch},
+                )
+                self.success("rebase completed; retrying previous git step")
+                return StepResult.RETRY
+            detail = (cp.stderr or cp.stdout or "").lower()
+            if any_in("conflict", "resolve all conflicts", eq=detail):
+                _emit_remediation_event(
+                    "pull_rebase",
+                    "failed",
+                    {"reason": "rebase conflicts", "remote": remote, "branch": branch},
+                )
+                self.warn("rebase reported conflicts")
+                if not const.CI_MODE and not const.AUTOFIX:
+                    allowed_shell, shell_reason = self._allow_remediation("open_shell_manual")
+                    if allowed_shell:
+                        shell = get_shell()
+                        if shell:
+                            self.prompt("opening conflict resolver shell; resolve rebase conflicts then exit")
+                            _run([shell], cwd, check=False, capture=False, text=True)
+                            _emit_remediation_event("open_shell_manual", "success")
+                            return StepResult.RETRY
+                    else:
+                        self.warn(shell_reason)
+                self.warn("resolve conflicts manually and retry")
+                return StepResult.FAIL
+            _emit_remediation_event(
+                "pull_rebase",
+                "failed",
+                {"reason": "rebase failed", "remote": remote, "branch": branch},
+            )
+            self.warn("rebase failed; falling back to legacy remote-sync recovery")
+            return self.repo_corruption(cwd)
+        if choice == "2":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        if choice == "3":
+            return self.repo_corruption(cwd)
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to diverged branch state")
+        return StepResult.FAIL
+
     def lock_contention(self, stderr: str, cwd: str) -> StepResult:
         """Handle stale git lock-file contention when safe to clean."""
         self.warn("git lock contention detected")
@@ -910,6 +1121,686 @@ class Handlers:
             self.warn(reason)
             return StepResult.FAIL
         self.abort("aborting due to authentication failure")
+        return StepResult.FAIL
+
+    def large_file_rejection(self, stderr: str, cwd: str) -> StepResult:
+        """Handle remote rejections for files above host size limits."""
+        file_path, file_size, limit = _extract_large_file_details(stderr)
+        msg = "remote rejected push due to large file size limit"
+        if file_path:
+            detail = f"{file_path}"
+            if file_size and limit:
+                detail += f" ({file_size} > {limit})"
+            msg += f": {detail}"
+        self.warn(msg)
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: rerun with --auto-fix or use manual LFS/history scrub steps")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Configure Git LFS for the file and amend latest commit",
+                "2": "Show history scrub steps (git filter-repo)",
+                "3": "Open shell to resolve manually",
+                "4": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "4"; print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("configure_git_lfs_tracking")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            if not file_path:
+                self.warn("could not parse offending file from remote rejection; use history scrub guidance")
+                _emit_remediation_event(
+                    "configure_git_lfs_tracking",
+                    "failed",
+                    {"reason": "missing offending file path"},
+                )
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="configure_git_lfs_tracking",
+                result=StepResult.RETRY,
+                note=f"would run git lfs install/track and amend commit for {file_path}",
+            )
+            if simulated:
+                return result
+            lfs = _run(["git", "lfs", "version"], cwd, check=False)
+            if lfs.returncode != 0:
+                self.warn("git-lfs is not available; install it and rerun")
+                _emit_remediation_event(
+                    "configure_git_lfs_tracking",
+                    "failed",
+                    {"reason": "git-lfs not installed"},
+                )
+                return StepResult.FAIL
+            install = _run(["git", "lfs", "install"], cwd, check=False)
+            track = _run(["git", "lfs", "track", file_path], cwd, check=False)
+            add = _run(["git", "add", ".gitattributes", file_path], cwd, check=False)
+            amend = _run(["git", "commit", "--amend", "--no-edit"], cwd, check=False)
+            if any(cp.returncode != 0 for cp in (install, track, add, amend)):
+                self.warn("LFS remediation failed; use history scrub guidance")
+                _emit_remediation_event(
+                    "configure_git_lfs_tracking",
+                    "failed",
+                    {"file": file_path},
+                )
+                return StepResult.FAIL
+            _emit_remediation_event(
+                "configure_git_lfs_tracking",
+                "success",
+                {"file": file_path},
+            )
+            self.success("large file moved to Git LFS in latest commit; retry push")
+            return StepResult.RETRY
+        if choice == "2":
+            allowed, reason = self._allow_remediation("history_scrub_guidance")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            steps = [
+                "1) Install git-filter-repo if missing.",
+                f"2) Remove object from history: git filter-repo --path {file_path or '<offending-file>'} --invert-paths",
+                "3) Re-commit the file via Git LFS if it must stay in repo.",
+                "4) Force-push rewritten branch: git push --force-with-lease origin <branch>",
+            ]
+            for step_text in steps:
+                self.warn(step_text)
+            _emit_remediation_event(
+                "history_scrub_guidance",
+                "success",
+                {"file": file_path or "<unknown>"},
+            )
+            return StepResult.FAIL
+        if choice == "3":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to large-file remote rejection")
+        return StepResult.FAIL
+
+    def hook_declined(self, stderr: str, cwd: str) -> StepResult:
+        """Handle git hook declined errors during push/commit flows."""
+        self.warn("git hook declined the operation")
+        hook_name, command_hint, failure_line = _extract_hook_failure_details(stderr)
+        hook_details = {
+            "hook": hook_name or "<unknown>",
+            "command": command_hint or "<unknown>",
+            "failure_line": failure_line or "<unknown>",
+        }
+        _emit_remediation_event("hook_failure_analysis", "detected", hook_details)
+        self.warn("hook output: " + wrap(stderr[:220]))
+        if hook_name:
+            self.warn(f"detected hook: {hook_name}")
+        if command_hint:
+            self.warn(f"suspected failing command: {command_hint}")
+        if failure_line:
+            self.warn(f"first failure signal: {failure_line}")
+        self.warn("fix the hook locally before bypassing with --no-verify")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: hook bypass is disabled; fix hook failures and retry")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Retry push with --no-verify (bypass hooks)",
+                "2": "Open shell to fix hook failures",
+                "3": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "3"; print()
+        else:
+            choice = "3"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("push_no_verify")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="push_no_verify",
+                result=StepResult.OK,
+                note="would run git push --no-verify origin <branch>",
+            )
+            if simulated:
+                return result
+            cp_branch = _run(["git", "branch", "--show-current"], cwd, check=False)
+            branch = (cp_branch.stdout or "").strip()
+            cp_remote = _run(["git", "remote"], cwd, check=False)
+            remotes = [r.strip() for r in (cp_remote.stdout or "").splitlines() if r.strip()]
+            remote = remotes[0] if remotes else "origin"
+            cmd = ["git", "push", "--no-verify", remote]
+            if branch:
+                cmd.append(branch)
+            cp = _run(cmd, cwd, check=False)
+            if cp.returncode != 0:
+                _emit_remediation_event(
+                    "push_no_verify",
+                    "failed",
+                    {
+                        "reason": (cp.stderr or cp.stdout or "").strip(),
+                        "hook": hook_details["hook"],
+                        "command": hook_details["command"],
+                    },
+                )
+                self.warn("hook bypass push failed")
+                return StepResult.FAIL
+            _emit_remediation_event(
+                "push_no_verify",
+                "success",
+                {
+                    "remote": remote,
+                    "branch": branch or "<current>",
+                    "hook": hook_details["hook"],
+                    "command": hook_details["command"],
+                },
+            )
+            self.success("push completed with --no-verify")
+            return StepResult.OK
+        if choice == "2":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to hook rejection")
+        return StepResult.FAIL
+
+    def submodule_inconsistent(self, stderr: str, cwd: str) -> StepResult:
+        """Handle common submodule metadata/content mismatch failures."""
+        self.warn("submodule state appears inconsistent")
+        self.warn("symptom: " + wrap(stderr[:220]))
+        submodule_path = _extract_submodule_path(stderr)
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: submodule remediation disabled without --auto-fix")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Sync and update submodules recursively",
+                "2": "Fetch/prune target submodule and retry",
+                "3": "Open shell for manual submodule repair",
+                "4": "Print manual recovery steps and abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "4"; print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("submodule_sync_update")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="submodule_sync_update",
+                result=StepResult.RETRY,
+                note="would run git submodule sync/update --recursive",
+            )
+            if simulated:
+                return result
+            sync_cp = _run(["git", "submodule", "sync", "--recursive"], cwd, check=False)
+            update_cp = _run(
+                ["git", "submodule", "update", "--init", "--recursive"],
+                cwd,
+                check=False,
+            )
+            if sync_cp.returncode != 0 or update_cp.returncode != 0:
+                _emit_remediation_event(
+                    "submodule_sync_update",
+                    "failed",
+                    {
+                        "sync_rc": str(sync_cp.returncode),
+                        "update_rc": str(update_cp.returncode),
+                    },
+                )
+                self.warn("submodule sync/update failed; use manual recovery steps")
+                return StepResult.FAIL
+            _emit_remediation_event("submodule_sync_update", "success")
+            self.success("submodule sync/update completed; retrying operation")
+            return StepResult.RETRY
+        if choice == "2":
+            allowed, reason = self._allow_remediation("submodule_fetch_prune")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            if not submodule_path:
+                self.warn("could not determine submodule path from error output")
+                _emit_remediation_event(
+                    "submodule_fetch_prune",
+                    "failed",
+                    {"reason": "missing submodule path"},
+                )
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="submodule_fetch_prune",
+                result=StepResult.RETRY,
+                note=f"would run git -C {submodule_path} fetch --all --tags --prune",
+            )
+            if simulated:
+                return result
+            fetch_cp = _run(
+                ["git", "-C", submodule_path, "fetch", "--all", "--tags", "--prune"],
+                cwd,
+                check=False,
+            )
+            if fetch_cp.returncode != 0:
+                _emit_remediation_event(
+                    "submodule_fetch_prune",
+                    "failed",
+                    {"submodule": submodule_path},
+                )
+                self.warn("submodule fetch/prune failed")
+                return StepResult.FAIL
+            _emit_remediation_event(
+                "submodule_fetch_prune",
+                "success",
+                {"submodule": submodule_path},
+            )
+            self.success("submodule fetch/prune completed; retrying operation")
+            return StepResult.RETRY
+        if choice == "3":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        manual_steps = [
+            "1) git submodule sync --recursive",
+            "2) git submodule update --init --recursive",
+            "3) for broken refs: git -C <submodule> fetch --all --tags --prune",
+            "4) ensure parent repo points to existing submodule commit on remote",
+            "5) retry push after submodule commit pointers are valid on remotes",
+        ]
+        for step_text in manual_steps:
+            self.warn(step_text)
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to submodule inconsistency")
+        return StepResult.FAIL
+
+    def protected_branch(self, stderr: str, cwd: str) -> StepResult:
+        """Handle remote protected-branch push rejections."""
+        self.warn("remote protected branch policy rejected push")
+        match = re.search(r"refs/heads/([A-Za-z0-9._/-]+)", stderr)
+        target = match.group(1) if match else "main"
+        base = _sanitize_branch_suffix(target)
+        candidate = f"fix/changes-from-{base}"
+
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: cannot open interactive protected-branch remediation")
+            return StepResult.FAIL
+
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Create feature branch and push it",
+                "2": "Open shell to resolve manually",
+                "3": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "3"; print()
+        else:
+            choice = "1"
+
+        if choice == "1":
+            allowed, reason = self._allow_remediation("create_feature_branch")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="create_feature_branch",
+                result=StepResult.OK,
+                note=f"would create and push {candidate}",
+            )
+            if simulated: return result
+            try:
+                cp_remote = _run(["git", "remote"], cwd, check=False)
+                remotes = [r.strip() for r in (cp_remote.stdout or "").splitlines() if r.strip()]
+                remote = remotes[0] if remotes else "origin"
+                create = _run(["git", "checkout", "-b", candidate], cwd, check=False)
+                if create.returncode != 0:
+                    suffix = time.strftime("%Y%m%d%H%M%S")
+                    candidate = f"{candidate}-{suffix}"
+                    create = _run(["git", "checkout", "-b", candidate], cwd, check=False)
+                if create.returncode != 0:
+                    self.warn("failed to create recovery feature branch")
+                    _emit_remediation_event(
+                        "create_feature_branch",
+                        "failed",
+                        {"reason": (create.stderr or create.stdout or "").strip()},
+                    )
+                    return StepResult.FAIL
+                push = _run(["git", "push", "-u", remote, candidate], cwd, check=False)
+                if push.returncode != 0:
+                    self.warn("feature branch created but push failed")
+                    _emit_remediation_event(
+                        "create_feature_branch",
+                        "failed",
+                        {"branch": candidate, "remote": remote},
+                    )
+                    return StepResult.FAIL
+                self.success(f"pushed feature branch: {candidate}")
+                _emit_remediation_event(
+                    "create_feature_branch",
+                    "success",
+                    {"branch": candidate, "remote": remote, "target": target},
+                )
+                return StepResult.OK
+            except Exception as e:
+                _emit_remediation_event(
+                    "create_feature_branch",
+                    "failed",
+                    {"reason": str(e)},
+                )
+                self.warn("feature branch remediation failed")
+                return StepResult.FAIL
+        if choice == "2":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to protected branch restriction")
+        return StepResult.FAIL
+
+    def dirty_worktree(self, stderr: str, cwd: str) -> StepResult:
+        """Handle merge/rebase blockers caused by local uncommitted changes."""
+        self.warn("dirty working tree blocks the requested git operation")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: cannot perform interactive worktree remediation")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Auto-stash and retry",
+                "2": "Create WIP commit and retry",
+                "3": "Open shell to resolve manually",
+                "4": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "4"; print()
+        else:
+            choice = "1"
+
+        if choice == "1":
+            allowed, reason = self._allow_remediation("auto_stash_worktree")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="auto_stash_worktree",
+                result=StepResult.RETRY,
+                note="would run git stash push -u and retry operation",
+            )
+            if simulated: return result
+            cp = _run(
+                ["git", "stash", "push", "-u", "-m", "pnp-auto-stash"],
+                cwd,
+                check=False,
+            )
+            if cp.returncode != 0:
+                self.warn("auto-stash failed")
+                _emit_remediation_event(
+                    "auto_stash_worktree",
+                    "failed",
+                    {"reason": (cp.stderr or cp.stdout or "").strip()},
+                )
+                return StepResult.FAIL
+            self._pending_stash_pop.add(str(Path(cwd).resolve()))
+            _emit_remediation_event("auto_stash_worktree", "success")
+            return StepResult.RETRY
+        if choice == "2":
+            allowed, reason = self._allow_remediation("auto_wip_commit")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            simulated, result = self._simulate_remediation(
+                action="auto_wip_commit",
+                result=StepResult.RETRY,
+                note="would run git add -A && git commit -m 'WIP: pnp auto-commit'",
+            )
+            if simulated: return result
+            add = _run(["git", "add", "-A"], cwd, check=False)
+            if add.returncode != 0:
+                self.warn("failed to stage WIP commit")
+                _emit_remediation_event("auto_wip_commit", "failed", {"stage": "add"})
+                return StepResult.FAIL
+            commit = _run(
+                ["git", "commit", "-m", "WIP: pnp auto-commit"],
+                cwd,
+                check=False,
+            )
+            if commit.returncode != 0:
+                self.warn("failed to create WIP commit")
+                _emit_remediation_event("auto_wip_commit", "failed", {"stage": "commit"})
+                return StepResult.FAIL
+            _emit_remediation_event("auto_wip_commit", "success")
+            return StepResult.RETRY
+        if choice == "3":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to dirty working tree")
+        return StepResult.FAIL
+
+    def detached_head(self, stderr: str, cwd: str) -> StepResult:
+        """Recover detached HEAD by creating a named branch."""
+        self.warn("detached HEAD detected")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: cannot perform interactive detached-head remediation")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Create recovery branch",
+                "2": "Open shell to resolve manually",
+                "3": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "3"; print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("recover_detached_head")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            branch = "fix/recovered-branch-work"
+            simulated, result = self._simulate_remediation(
+                action="recover_detached_head",
+                result=StepResult.RETRY,
+                note=f"would run git checkout -b {branch}",
+            )
+            if simulated: return result
+            cp = _run(["git", "checkout", "-b", branch], cwd, check=False)
+            if cp.returncode != 0:
+                suffix = time.strftime("%Y%m%d%H%M%S")
+                branch = f"{branch}-{suffix}"
+                cp = _run(["git", "checkout", "-b", branch], cwd, check=False)
+            if cp.returncode != 0:
+                self.warn("failed to create recovery branch from detached HEAD")
+                _emit_remediation_event(
+                    "recover_detached_head",
+                    "failed",
+                    {"reason": (cp.stderr or cp.stdout or "").strip()},
+                )
+                return StepResult.FAIL
+            _emit_remediation_event(
+                "recover_detached_head",
+                "success",
+                {"branch": branch},
+            )
+            self.success(f"attached detached HEAD to {branch}")
+            return StepResult.RETRY
+        if choice == "2":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to detached HEAD")
+        return StepResult.FAIL
+
+    def line_endings(self, stderr: str, cwd: str) -> StepResult:
+        """Handle LF/CRLF normalization warnings and phantom diff risk."""
+        del stderr
+        self.warn("line-ending normalization warning detected")
+        if const.CI_MODE and not const.AUTOFIX:
+            self.warn("CI mode: rerun with --auto-fix to apply line-ending remediation")
+            return StepResult.FAIL
+        if not const.AUTOFIX:
+            self.info("Choose an action:")
+            options = {
+                "1": "Create .gitattributes (* text=auto) and renormalize",
+                "2": "Renormalize existing files only",
+                "3": "Open shell to resolve manually",
+                "4": "Abort",
+            }
+            for key, desc in options.items():
+                print(wrap_text(f"{key}. {desc}", I + 3, I))
+            choice = input(CURSOR).strip() or "4"; print()
+        else:
+            choice = "1"
+        if choice == "1":
+            allowed, reason = self._allow_remediation("create_gitattributes")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            attrs = Path(cwd) / ".gitattributes"
+            existing = ""
+            if attrs.exists():
+                try:
+                    existing = attrs.read_text(encoding="utf-8")
+                except Exception:
+                    existing = ""
+            has_rule = any(
+                line.strip() == "* text=auto"
+                for line in existing.splitlines()
+                if line.strip() and not line.strip().startswith("#")
+            )
+            simulated, result = self._simulate_remediation(
+                action="create_gitattributes",
+                result=StepResult.RETRY,
+                note="would ensure .gitattributes contains '* text=auto'",
+            )
+            if simulated:
+                return result
+            try:
+                if not has_rule:
+                    content = existing
+                    if content and not content.endswith("\n"):
+                        content += "\n"
+                    content += "* text=auto\n"
+                    attrs.write_text(content, encoding="utf-8")
+                    _emit_remediation_event(
+                        "create_gitattributes",
+                        "success",
+                        {"path": str(attrs), "created_rule": "1"},
+                    )
+                else:
+                    _emit_remediation_event(
+                        "create_gitattributes",
+                        "success",
+                        {"path": str(attrs), "created_rule": "0"},
+                    )
+            except Exception as e:
+                _emit_remediation_event(
+                    "create_gitattributes",
+                    "failed",
+                    {"reason": str(e)},
+                )
+                self.warn("failed to update .gitattributes")
+                return StepResult.FAIL
+            return self._renormalize_line_endings(cwd)
+        if choice == "2":
+            return self._renormalize_line_endings(cwd)
+        if choice == "3":
+            allowed, reason = self._allow_remediation("open_shell_manual")
+            if not allowed:
+                self.warn(reason)
+                return StepResult.FAIL
+            shell = get_shell()
+            if not shell:
+                self.warn("no shell available")
+                return StepResult.FAIL
+            _run([shell], cwd, check=False, capture=False, text=True)
+            _emit_remediation_event("open_shell_manual", "success")
+            return StepResult.RETRY
+        allowed, reason = self._allow_remediation("abort")
+        if not allowed:
+            self.warn(reason)
+            return StepResult.FAIL
+        self.abort("aborting due to line-ending normalization issue")
         return StepResult.FAIL
 
     def ref_conflict(self, stderr: str, cwd: str) -> StepResult:

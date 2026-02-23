@@ -34,7 +34,14 @@ DEPRECATED_ERROR_CODE_ALIASES: dict[str, str] = {
     "PNP_RES_UNCLASSIFIED": "PNP_GIT_UNCLASSIFIED",
     "PNP_RES_EMPTY_STDERR": "PNP_GIT_EMPTY_STDERR",
     "PNP_RES_AUTH_FAIL": "PNP_NET_AUTH_FAIL",
+    "PNP_RES_LARGE_FILE_REJECTED": "PNP_NET_LARGE_FILE_REJECTED",
+    "PNP_RES_HOOK_DECLINED": "PNP_GIT_HOOK_DECLINED",
+    "PNP_RES_SUBMODULE_INCONSISTENT": "PNP_GIT_SUBMODULE_INCONSISTENT",
     "PNP_RES_NON_FAST_FORWARD": "PNP_GIT_NON_FAST_FORWARD",
+    "PNP_RES_PROTECTED_BRANCH": "PNP_GIT_PROTECTED_BRANCH",
+    "PNP_RES_DIRTY_WORKTREE": "PNP_GIT_DIRTY_WORKTREE",
+    "PNP_RES_LINE_ENDING_NORMALIZATION": "PNP_GIT_LINE_ENDING_NORMALIZATION",
+    "PNP_RES_DETACHED_HEAD": "PNP_GIT_DETACHED_HEAD",
     "PNP_RES_REF_CONFLICT": "PNP_GIT_REF_CONFLICT",
     "PNP_RES_LOCK_CONTENTION": "PNP_GIT_LOCK_CONTENTION",
     "PNP_RES_UPSTREAM_MISSING": "PNP_GIT_UPSTREAM_MISSING",
@@ -111,6 +118,18 @@ ERROR_CODE_POLICY: dict[str, dict[str, Any]] = {
         "severity": "error",
         "category": "network",
     },
+    "PNP_NET_LARGE_FILE_REJECTED": {
+        "severity": "error",
+        "category": "network",
+    },
+    "PNP_GIT_HOOK_DECLINED": {
+        "severity": "error",
+        "category": "git",
+    },
+    "PNP_GIT_SUBMODULE_INCONSISTENT": {
+        "severity": "error",
+        "category": "git",
+    },
     "PNP_NET_TLS_FAIL": {
         "severity": "error",
         "category": "network",
@@ -120,6 +139,22 @@ ERROR_CODE_POLICY: dict[str, dict[str, Any]] = {
         "category": "network",
     },
     "PNP_GIT_NON_FAST_FORWARD": {
+        "severity": "error",
+        "category": "git",
+    },
+    "PNP_GIT_PROTECTED_BRANCH": {
+        "severity": "error",
+        "category": "git",
+    },
+    "PNP_GIT_DIRTY_WORKTREE": {
+        "severity": "error",
+        "category": "git",
+    },
+    "PNP_GIT_LINE_ENDING_NORMALIZATION": {
+        "severity": "warn",
+        "category": "git",
+    },
+    "PNP_GIT_DETACHED_HEAD": {
         "severity": "error",
         "category": "git",
     },

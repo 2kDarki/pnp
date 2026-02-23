@@ -60,7 +60,7 @@
     "classification": {
       "code": "PNP_GIT_NON_FAST_FORWARD",
       "severity": "error",
-      "handler": "repo_corruption"
+      "handler": "diverged_branch"
     }
   },
   {
