@@ -357,13 +357,12 @@ class Handlers:
         cp = _run(["git", "add", "--renormalize", "."], cwd, check=False)
         if cp.returncode != 0:
             detail = (cp.stderr or cp.stdout or "").strip()
-            index_result = self._recover_index_worktree_mismatch(
-                detail,
-                cwd,
-                "renormalize_line_endings",
-            )
-            if index_result is not None:
-                return index_result
+            if self._is_index_worktree_mismatch(detail):
+                return self._recover_index_worktree_mismatch(
+                    detail,
+                    cwd,
+                    "renormalize_line_endings",
+                )
             lowered = detail.lower()
             old_git = any_in(
                 "unknown option", "renormalize", "usage: git add", eq=lowered
@@ -380,13 +379,13 @@ class Handlers:
                     self.success("line endings normalized (fallback mode)")
                     return StepResult.RETRY
                 fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
-                index_result = self._recover_index_worktree_mismatch(
-                    fallback_detail or detail,
-                    cwd,
-                    "renormalize_line_endings",
-                )
-                if index_result is not None:
-                    return index_result
+                token = fallback_detail or detail
+                if self._is_index_worktree_mismatch(token):
+                    return self._recover_index_worktree_mismatch(
+                        token,
+                        cwd,
+                        "renormalize_line_endings",
+                    )
                 _emit_remediation_event(
                     "renormalize_line_endings",
                     "failed",
@@ -435,13 +434,20 @@ class Handlers:
         stderr: str,
         cwd: str,
         action: str,
-    ) -> StepResult | None:
-        if not self._is_index_worktree_mismatch(stderr):
-            return None
+    ) -> StepResult:
         allowed, reason = self._allow_remediation("index_rebuild_restage")
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
+        if not const.AUTOFIX:
+            prompt = wrap(
+                "index/worktree mismatch detected. "
+                "Run non-destructive recovery "
+                "('git reset --mixed' + 'git add -A')? [y/n]"
+            )
+            if not intent(prompt, "y", "return"):
+                self.warn("index rebuild remediation declined")
+                return StepResult.FAIL
         self.warn("index/worktree mismatch detected; attempting index rebuild fallback")
         simulated, result = self._simulate_remediation(
             action="index_rebuild_restage",
@@ -1923,15 +1929,11 @@ class Handlers:
 
     def index_worktree_mismatch(self, stderr: str, cwd: str) -> StepResult:
         """Handle index/worktree mismatch regardless of triggering workflow step."""
-        result = self._recover_index_worktree_mismatch(
+        return self._recover_index_worktree_mismatch(
             stderr,
             cwd,
             action="index_rebuild_restage",
         )
-        if result is not None:
-            return result
-        self.warn("index/worktree mismatch detected but recovery did not apply")
-        return StepResult.FAIL
 
     def ref_conflict(self, stderr: str, cwd: str) -> StepResult:
         """Handle ref/tag conflicts with safe skip or manual intervention."""

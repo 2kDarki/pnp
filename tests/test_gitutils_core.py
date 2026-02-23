@@ -327,6 +327,104 @@ class GitUtilsCoreTests(unittest.TestCase):
         self.assertEqual(out, "ok")
         self.assertEqual(run_cmd.call_count, 3)
 
+    def test_run_git_index_mismatch_exhaustion_returns_git_error_not_circuit_breaker(self) -> None:
+        const.sync_runtime_flags(_args(dry_run=False))
+        failing = CompletedProcess(
+            args=["git", "add", "--renormalize", "."],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "error: short read while indexing NUL\n"
+                "error: NUL: failed to insert into database\n"
+                "error: unable to index 'NUL'"
+            ),
+        )
+
+        class _Decision:
+            def __init__(self, result: utils.StepResult):
+                self.result = result
+                self.classification = type("_C", (), {"code": "PNP_GIT_INDEX_WORKTREE_MISMATCH"})()
+
+        with patch("pnp.gitutils.subprocess.run", side_effect=[failing, failing, failing, failing]):
+            with patch("pnp.gitutils.resolver.resolve.decide",
+                       return_value=_Decision(utils.StepResult.RETRY)):
+                with patch("pnp.gitutils._retry_delay_seconds", return_value=0.0):
+                    rc, out = gitutils.run_git(["add", "--renormalize", "."], cwd=".")
+        self.assertEqual(rc, 1)
+        self.assertIn("short read while indexing NUL", out)
+        self.assertNotIn("circuit breaker", out)
+
+    def test_run_git_combined_nul_stat_index_mismatch_exhaustion(self) -> None:
+        const.sync_runtime_flags(_args(dry_run=False))
+        failing = CompletedProcess(
+            args=["git", "add", "--renormalize", "."],
+            returncode=1,
+            stdout="",
+            stderr=(
+                "error: short read while indexing NUL\n"
+                "error: NUL: failed to insert into database\n"
+                "error: unable to index 'NUL'\n"
+                "fatal: unable to stat 'infrastructure/oracle-free/scripts/seed-content.sh': "
+                "No such file or directory"
+            ),
+        )
+
+        class _Decision:
+            def __init__(self, result: utils.StepResult):
+                self.result = result
+                self.classification = type("_C", (), {"code": "PNP_GIT_INDEX_WORKTREE_MISMATCH"})()
+
+        with patch("pnp.gitutils.subprocess.run", side_effect=[failing, failing, failing, failing]):
+            with patch(
+                "pnp.gitutils.resolver.resolve.decide",
+                return_value=_Decision(utils.StepResult.RETRY),
+            ):
+                with patch("pnp.gitutils._retry_delay_seconds", return_value=0.0):
+                    rc, out = gitutils.run_git(["add", "--renormalize", "."], cwd=".")
+        self.assertEqual(rc, 1)
+        self.assertIn("short read while indexing NUL", out)
+        self.assertIn("unable to stat", out)
+        self.assertNotIn("circuit breaker", out)
+
+    def test_run_git_retries_are_budgeted_per_error_code(self) -> None:
+        const.sync_runtime_flags(_args(dry_run=False))
+        failing_a = CompletedProcess(
+            args=["git", "push"],
+            returncode=1,
+            stdout="",
+            stderr="fatal: could not read from remote repository",
+        )
+        failing_b = CompletedProcess(
+            args=["git", "push"],
+            returncode=1,
+            stdout="",
+            stderr="fatal: no upstream configured for branch 'main'",
+        )
+        success = CompletedProcess(
+            args=["git", "push"],
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+        class _Decision:
+            def __init__(self, code: str):
+                self.result = utils.StepResult.RETRY
+                self.classification = type("_C", (), {"code": code})()
+
+        decisions = [
+            _Decision("PNP_NET_REMOTE_UNREADABLE"),
+            _Decision("PNP_GIT_UPSTREAM_MISSING"),
+        ]
+
+        with patch("pnp.gitutils.subprocess.run", side_effect=[failing_a, failing_b, success]) as run_cmd:
+            with patch("pnp.gitutils.resolver.resolve.decide", side_effect=decisions):
+                with patch("pnp.gitutils._retry_delay_seconds", return_value=0.0):
+                    rc, out = gitutils.run_git(["push", "origin"], cwd=".")
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "ok")
+        self.assertEqual(run_cmd.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

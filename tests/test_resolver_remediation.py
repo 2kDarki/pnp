@@ -294,6 +294,28 @@ class ResolverRemediationTests(unittest.TestCase):
         self.assertTrue(any(cmd[:3] == ["git", "reset", "--mixed"] for cmd in calls))
         self.assertTrue(any(cmd[:3] == ["git", "add", "-A"] for cmd in calls))
 
+    def test_index_worktree_mismatch_non_autofix_decline_does_not_run_recovery(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=False, dry_run=False, ci=False, interactive=True):
+            with patch("builtins.input", return_value="n"):
+                with patch("pnp.resolver._run", side_effect=fake_run):
+                    result = h.index_worktree_mismatch(
+                        "error: short read while indexing NUL\n"
+                        "error: unable to index 'NUL'\n"
+                        "fatal: unable to stat 'missing/file.txt': No such file or directory",
+                        ".",
+                    )
+        self.assertIs(result, utils.StepResult.FAIL)
+        self.assertEqual(calls, [])
+
     def test_large_file_rejection_autofix_tracks_lfs_and_amends(self) -> None:
         h = resolver.Handlers()
         calls: list[list[str]] = []

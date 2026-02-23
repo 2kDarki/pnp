@@ -188,7 +188,8 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
             tries: int = 0, started_at: float | None = None,
             timeout_budget_s: float | None = None,
             failure_counts: dict[str, int] | None = None,
-            signature_counts: dict[str, int] | None = None) -> tuple[int, str]:
+            signature_counts: dict[str, int] | None = None,
+            retry_counts: dict[str, int] | None = None) -> tuple[int, str]:
     """
     Run a git command and route stderr through resolver
     handlers when needed
@@ -211,6 +212,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         timeout_budget_s = DEFAULT_STEP_TIMEOUT_BUDGET_S
     if failure_counts is None: failure_counts = {}
     if signature_counts is None: signature_counts = {}
+    if retry_counts is None: retry_counts = {}
     elapsed = now - started_at
     remaining = timeout_budget_s - elapsed
     if remaining <= 0:
@@ -278,23 +280,34 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     if code:
         failure_counts[code] = failure_counts.get(code, 0) + 1
         if failure_counts[code] > CIRCUIT_BREAKER_MAX_PER_CODE:
+            if result is StepResult.RETRY:
+                policy = _retry_policy_for(code)
+                max_retries = int(policy.get("max_retries", 0))
+                retryable = bool(policy.get("retryable", False))
+                code_tries = retry_counts.get(code, 0)
+                if not retryable and code_tries == 0:
+                    retryable = True
+                    max_retries = 1
+                if retryable and code_tries >= max_retries:
+                    return proc.returncode, out
             return 75, f"circuit breaker: repeated failures for {code}"
 
     if result is StepResult.RETRY:
         policy = _retry_policy_for(code)
         if code:
             timeout_budget_s = min(timeout_budget_s, _timeout_budget_for(code))
+        code_tries = retry_counts.get(code, 0)
         max_retries = int(policy.get("max_retries", 0))
         retryable = bool(policy.get("retryable", False))
         # Resolver handlers return RETRY only after an explicit remediation path.
         # Allow one immediate retry even for denylisted codes so repaired state
         # can be re-evaluated in the same invocation.
-        if not retryable and tries == 0:
+        if not retryable and code_tries == 0:
             retryable = True
             max_retries = 1
-        if retryable and tries < max_retries:
-            attempt = tries + 1
-            delay_s = _retry_delay_seconds(tries, policy)
+        if retryable and code_tries < max_retries:
+            attempt = code_tries + 1
+            delay_s = _retry_delay_seconds(code_tries, policy)
             elapsed = time.monotonic() - started_at
             remaining = timeout_budget_s - elapsed
             if remaining <= 0:
@@ -317,12 +330,15 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
                 },
             )
             echo.prompt(f"retrying step ({attempt}/{max_retries})...")
+            if code:
+                retry_counts[code] = attempt
             return run_git(args, cwd=cwd, capture=capture,
                    tries=attempt,
                    started_at=started_at,
                    timeout_budget_s=timeout_budget_s,
                    failure_counts=failure_counts,
-                   signature_counts=signature_counts)
+                   signature_counts=signature_counts,
+                   retry_counts=retry_counts)
 
     if result is StepResult.OK: return 0, out
 
