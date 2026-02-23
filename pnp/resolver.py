@@ -431,6 +431,19 @@ class Handlers:
             eq=lowered,
         )
 
+    def _is_warning_only_line_ending(self, stderr: str) -> bool:
+        lowered = stderr.lower()
+        if not self._is_line_ending_warning(lowered):
+            return False
+        blockers = (
+            "fatal:",
+            "error:",
+            "unable to",
+            "failed to",
+            "cannot ",
+        )
+        return not any(token in lowered for token in blockers)
+
     def _recover_index_worktree_mismatch(
         self,
         stderr: str,
@@ -470,6 +483,14 @@ class Handlers:
             self.success("index rebuilt and files restaged")
             return StepResult.RETRY
         readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
+        if readd_cp.returncode != 0 and self._is_warning_only_line_ending(readd_detail):
+            _emit_remediation_event(
+                action,
+                "success",
+                {"mode": "index_rebuild_restage_warning_only"},
+            )
+            self.success("index rebuilt and files restaged (line-ending warnings only)")
+            return StepResult.RETRY
         if readd_cp.returncode != 0 and self._is_line_ending_warning(readd_detail):
             if handoff_allowed:
                 _emit_remediation_event(
@@ -495,6 +516,14 @@ class Handlers:
                 self.success("line-ending staging succeeded with core.autocrlf=false")
                 return StepResult.RETRY
             fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+            if self._is_warning_only_line_ending(fallback_detail):
+                _emit_remediation_event(
+                    action,
+                    "success",
+                    {"mode": "index_rebuild_autocrlf_override_warning_only"},
+                )
+                self.success("line-ending staging completed (warnings only)")
+                return StepResult.RETRY
             old_git = any_in(
                 "unknown option", "renormalize", "usage: git add", eq=fallback_detail.lower()
             )
