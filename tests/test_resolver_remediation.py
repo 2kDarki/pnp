@@ -368,6 +368,47 @@ class ResolverRemediationTests(unittest.TestCase):
         self.assertIs(result, utils.StepResult.RETRY)
         line_endings.assert_called_once()
 
+    def test_index_worktree_mismatch_line_ending_handoff_does_not_recurse_forever(self) -> None:
+        h = resolver.Handlers()
+        calls: list[list[str]] = []
+
+        def fake_run(cmd: list[str], cwd: str, check: bool = False,
+                     capture: bool = True, text: bool = True) -> CompletedProcess:
+            del cwd, check, capture, text
+            calls.append(cmd)
+            if cmd[:3] == ["git", "reset", "--mixed"]:
+                return CompletedProcess(cmd, 0, stdout="", stderr="")
+            if cmd[:4] == ["git", "add", "--renormalize", "."]:
+                return CompletedProcess(
+                    cmd,
+                    1,
+                    stdout="",
+                    stderr=(
+                        "error: short read while indexing NUL\n"
+                        "error: NUL: failed to insert into database\n"
+                        "error: unable to index 'NUL'"
+                    ),
+                )
+            if cmd[:3] == ["git", "add", "-A"]:
+                return CompletedProcess(
+                    cmd,
+                    1,
+                    stdout="",
+                    stderr="warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+                )
+            return CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        with _runtime_flags(auto_fix=True, dry_run=False, ci=True, interactive=False):
+            with patch("pnp.resolver._run", side_effect=fake_run):
+                result = h.index_worktree_mismatch(
+                    "error: short read while indexing NUL\n"
+                    "error: unable to index 'NUL'\n"
+                    "fatal: unable to stat 'missing/file.txt': No such file or directory",
+                    ".",
+                )
+        self.assertIs(result, utils.StepResult.FAIL)
+        self.assertEqual(sum(1 for cmd in calls if cmd[:4] == ["git", "add", "--renormalize", "."]), 1)
+
     def test_large_file_rejection_autofix_tracks_lfs_and_amends(self) -> None:
         h = resolver.Handlers()
         calls: list[list[str]] = []

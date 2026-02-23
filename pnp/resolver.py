@@ -362,6 +362,7 @@ class Handlers:
                     detail,
                     cwd,
                     "renormalize_line_endings",
+                    handoff_allowed=False,
                 )
             lowered = detail.lower()
             old_git = any_in(
@@ -385,6 +386,7 @@ class Handlers:
                         token,
                         cwd,
                         "renormalize_line_endings",
+                        handoff_allowed=False,
                     )
                 _emit_remediation_event(
                     "renormalize_line_endings",
@@ -434,6 +436,7 @@ class Handlers:
         stderr: str,
         cwd: str,
         action: str,
+        handoff_allowed: bool = True,
     ) -> StepResult:
         allowed, reason = self._allow_remediation("index_rebuild_restage")
         if not allowed:
@@ -468,13 +471,23 @@ class Handlers:
             return StepResult.RETRY
         readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
         if readd_cp.returncode != 0 and self._is_line_ending_warning(readd_detail):
+            if handoff_allowed:
+                _emit_remediation_event(
+                    action,
+                    "success",
+                    {"mode": "index_rebuild_then_line_ending_handoff"},
+                )
+                self.warn("index rebuilt; line-ending normalization warning remains, handing off remediation")
+                return self.line_endings(readd_detail, cwd)
             _emit_remediation_event(
                 action,
-                "success",
-                {"mode": "index_rebuild_then_line_ending_handoff"},
+                "failed",
+                {"reason": "line-ending warning persisted after index rebuild"},
             )
-            self.warn("index rebuilt; line-ending normalization warning remains, handing off remediation")
-            return self.line_endings(readd_detail, cwd)
+            self.warn("index rebuilt but line-ending warning persists after renormalization attempt")
+            self.warn("manual steps: run 'git add --renormalize .', then retry pnp")
+            self.warn("if this still fails, run: git pnp -a --safe-reset")
+            return StepResult.FAIL
         reason_text = (
             readd_detail
             or (reset_cp.stderr or reset_cp.stdout or "").strip()
