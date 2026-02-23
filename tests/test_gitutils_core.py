@@ -298,6 +298,35 @@ class GitUtilsCoreTests(unittest.TestCase):
         self.assertEqual(run_cmd.call_count, 2)
         decide.assert_called_once()
 
+    def test_run_git_line_ending_remediation_allows_third_retry_cycle(self) -> None:
+        const.sync_runtime_flags(_args(dry_run=False))
+        failing = CompletedProcess(
+            args=["git", "add", "--renormalize", "."],
+            returncode=1,
+            stdout="",
+            stderr="warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
+        )
+        success = CompletedProcess(
+            args=["git", "add", "--renormalize", "."],
+            returncode=0,
+            stdout="ok",
+            stderr="",
+        )
+
+        class _Decision:
+            def __init__(self, result: utils.StepResult):
+                self.result = result
+                self.classification = type("_C", (), {"code": "PNP_GIT_LINE_ENDING_NORMALIZATION"})()
+
+        with patch("pnp.gitutils.subprocess.run", side_effect=[failing, failing, success]) as run_cmd:
+            with patch("pnp.gitutils.resolver.resolve.decide",
+                       return_value=_Decision(utils.StepResult.RETRY)):
+                with patch("pnp.gitutils._retry_delay_seconds", return_value=0.0):
+                    rc, out = gitutils.run_git(["add", "--renormalize", "."], cwd=".")
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "ok")
+        self.assertEqual(run_cmd.call_count, 3)
+
 
 if __name__ == "__main__":
     unittest.main()

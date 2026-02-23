@@ -28,6 +28,7 @@ RETRYABLE_CODE_ALLOWLIST: set[str] = {
     "PNP_GIT_LOCK_CONTENTION",
     "PNP_GIT_UPSTREAM_MISSING",
     "PNP_GIT_NON_FAST_FORWARD",
+    "PNP_GIT_LINE_ENDING_NORMALIZATION",
 }
 
 NON_RETRYABLE_CODE_DENYLIST: set[str] = {
@@ -95,6 +96,13 @@ RETRY_POLICY_BY_CODE: dict[str, dict[str, float | int | bool]] = {
         "max_delay_s": 0.30,
         "jitter_s": 0.04,
     },
+    "PNP_GIT_LINE_ENDING_NORMALIZATION": {
+        "retryable": True,
+        "max_retries": 3,
+        "base_delay_s": 0.05,
+        "max_delay_s": 0.20,
+        "jitter_s": 0.02,
+    },
 }
 
 DEFAULT_STEP_TIMEOUT_BUDGET_S = 45.0
@@ -108,11 +116,13 @@ TIMEOUT_BUDGET_BY_CODE_S: dict[str, float] = {
     "PNP_GIT_LOCK_CONTENTION": 12.0,
     "PNP_GIT_UPSTREAM_MISSING": 12.0,
     "PNP_GIT_NON_FAST_FORWARD": 20.0,
+    "PNP_GIT_LINE_ENDING_NORMALIZATION": 20.0,
 }
 
 REPEATABLE_FAILURE_CODES: set[str] = {
     "PNP_NET_CONNECTIVITY",
     "PNP_NET_TIMEOUT",
+    "PNP_GIT_LINE_ENDING_NORMALIZATION",
 }
 
 CIRCUIT_BREAKER_MAX_PER_CODE = 3
