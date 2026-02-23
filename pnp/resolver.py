@@ -422,6 +422,14 @@ class Handlers:
             eq=lowered,
         )
 
+    def _is_line_ending_warning(self, stderr: str) -> bool:
+        lowered = stderr.lower()
+        return any_in(
+            "lf will be replaced by crlf",
+            "crlf will be replaced by lf",
+            eq=lowered,
+        )
+
     def _recover_index_worktree_mismatch(
         self,
         stderr: str,
@@ -452,13 +460,27 @@ class Handlers:
             )
             self.success("index rebuilt and files restaged")
             return StepResult.RETRY
+        readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
+        if readd_cp.returncode != 0 and self._is_line_ending_warning(readd_detail):
+            _emit_remediation_event(
+                action,
+                "success",
+                {"mode": "index_rebuild_then_line_ending_retry"},
+            )
+            self.warn("index rebuilt; line-ending normalization warning remains, retrying")
+            return StepResult.RETRY
         reason_text = (
-            (readd_cp.stderr or readd_cp.stdout or "").strip()
+            readd_detail
             or (reset_cp.stderr or reset_cp.stdout or "").strip()
             or stderr
         )
         _emit_remediation_event(action, "failed", {"reason": reason_text})
         self.warn("index rebuild fallback failed")
+        reset_detail = (reset_cp.stderr or reset_cp.stdout or "").strip()
+        if reset_detail:
+            self.warn(f"git reset --mixed failed: {reset_detail[:220]}")
+        if readd_detail:
+            self.warn(f"git add -A failed: {readd_detail[:220]}")
         self.warn("manual steps: run 'git reset --mixed', then 'git add -A', then retry pnp")
         self.warn("if this still fails, run: git pnp -a --safe-reset")
         return StepResult.FAIL
