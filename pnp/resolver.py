@@ -439,7 +439,7 @@ class Handlers:
         if not allowed:
             self.warn(reason)
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             prompt = wrap(
                 "index/worktree mismatch detected. "
                 "Run non-destructive recovery "
@@ -612,7 +612,7 @@ class Handlers:
                    + "repair")
             return StepResult.FAIL
 
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             # Present choices to user
             choices = {
                 "1": "Open a shell for manual fix",
@@ -959,7 +959,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: rerun with --auto-fix or rebase manually")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Run git pull --rebase and retry",
@@ -1207,7 +1207,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: interactive auth remediation unavailable")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Open GitHub token page",
@@ -1260,7 +1260,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: rerun with --auto-fix or use manual LFS/history scrub steps")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Configure Git LFS for the file and amend latest commit",
@@ -1380,7 +1380,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: hook bypass is disabled; fix hook failures and retry")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Retry push with --no-verify (bypass hooks)",
@@ -1464,7 +1464,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: submodule remediation disabled without --auto-fix")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Sync and update submodules recursively",
@@ -1589,7 +1589,7 @@ class Handlers:
             self.warn("CI mode: cannot open interactive protected-branch remediation")
             return StepResult.FAIL
 
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Create feature branch and push it",
@@ -1679,7 +1679,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: cannot perform interactive worktree remediation")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Auto-stash and retry",
@@ -1772,7 +1772,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: cannot perform interactive detached-head remediation")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Create recovery branch",
@@ -1842,7 +1842,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: rerun with --auto-fix to apply line-ending remediation")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Create .gitattributes (* text=auto) and renormalize",
@@ -1941,7 +1941,7 @@ class Handlers:
         if const.CI_MODE and not const.AUTOFIX:
             self.warn("CI mode: cannot resolve ref conflict interactively")
             return StepResult.FAIL
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose an action:")
             options = {
                 "1": "Open shell to fix refs manually",
@@ -2014,7 +2014,7 @@ class Handlers:
             self.warn("CI mode: cannot perform interactive repair")
             return StepResult.FAIL
 
-        if not const.AUTOFIX:
+        if not const.CI_MODE and not const.AUTOFIX:
             self.info("Choose how you'd like to fix this:")
             options = {
                 "1": "Add origin (HTTPS)",
