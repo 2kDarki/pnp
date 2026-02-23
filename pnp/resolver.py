@@ -373,6 +373,26 @@ class Handlers:
                     self.success("line endings normalized (fallback mode)")
                     return StepResult.RETRY
                 fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+                fallback_lower = fallback_detail.lower()
+                index_inconsistent = any_in(
+                    "unable to index",
+                    "failed to insert into database",
+                    "unable to stat",
+                    "short read while indexing",
+                    eq=fallback_lower,
+                )
+                if index_inconsistent:
+                    self.warn("index/worktree mismatch detected; attempting index rebuild fallback")
+                    reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
+                    readd_cp = _run(["git", "add", "-A"], cwd, check=False)
+                    if reset_cp.returncode == 0 and readd_cp.returncode == 0:
+                        _emit_remediation_event(
+                            "renormalize_line_endings",
+                            "success",
+                            {"mode": "fallback_reset_mixed_add_all"},
+                        )
+                        self.success("line endings normalized (index rebuild fallback)")
+                        return StepResult.RETRY
                 _emit_remediation_event(
                     "renormalize_line_endings",
                     "failed",
@@ -381,7 +401,8 @@ class Handlers:
                 self.warn("line-ending renormalization failed")
                 if fallback_detail:
                     self.warn(f"git add -A failed: {fallback_detail[:220]}")
-                self.warn("manual steps: set .gitattributes to '* text=auto', then run 'git add -A' and retry")
+                self.warn("manual steps: run 'git reset --mixed', then 'git add -A', then retry pnp")
+                self.warn("if this still fails, run: git pnp -a --safe-reset")
                 return StepResult.FAIL
             _emit_remediation_event(
                 "renormalize_line_endings",
