@@ -481,7 +481,9 @@ class Handlers:
                 {"mode": "index_rebuild_restage"},
             )
             self.success("index rebuilt and files restaged")
-            return StepResult.RETRY
+            # Staging is complete; return OK so run_git does not
+            # re-run the original command and hit the same mismatch.
+            return StepResult.OK
         readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
         if readd_cp.returncode != 0 and self._is_warning_only_line_ending(readd_detail):
             _emit_remediation_event(
@@ -490,7 +492,7 @@ class Handlers:
                 {"mode": "index_rebuild_restage_warning_only"},
             )
             self.success("index rebuilt and files restaged (line-ending warnings only)")
-            return StepResult.RETRY
+            return StepResult.OK
         if readd_cp.returncode != 0 and self._is_line_ending_warning(readd_detail):
             if handoff_allowed:
                 _emit_remediation_event(
