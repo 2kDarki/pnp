@@ -378,9 +378,33 @@ def has_uncommitted(path: str) -> bool:
     return bool(out.strip())
 
 
+def _is_add_error(out: str) -> bool:
+    """
+    Return True only if output contains a real git add failure.
+
+    On Windows with core.autocrlf=true, git exits 1 when it converts
+    LF->CRLF even though every file was staged correctly.  Those
+    warning-only exits must not be treated as errors.
+    """
+    lowered     = out.lower()
+    hard_errors = ("fatal:", "error:", "unable to", "failed to", "cannot ")
+    has_error   = any(t in lowered for t in hard_errors)
+    has_lf_warn = (
+        "lf will be replaced by crlf" in lowered
+        or "crlf will be replaced by lf" in lowered
+    )
+    # Pure LF/CRLF conversion warning with no hard error -> staging succeeded.
+    if has_lf_warn and not has_error:
+        return False
+    return has_error or (not has_lf_warn)
+
+
 def stage_all(path: str) -> None:
     rc, out = run_git(["add", "-A"], cwd=path)
-    if rc != 0: raise RuntimeError("git add failed: " + out)
+    if rc != 0 and not _is_add_error(out):
+        return  # LF-only warning on Windows; staging succeeded
+    if rc != 0:
+        raise RuntimeError("git add failed: " + out)
 
 
 def commit(path: str, message: str | None,

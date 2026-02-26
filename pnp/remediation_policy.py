@@ -153,6 +153,16 @@ REMEDIATION_POLICY: dict[str, RemediationRule] = {
         requires_interactive=False,
         requires_confirmation=False,
     ),
+    # Nuclear fallback: wipe the index with `git rm --cached -r .` and
+    # re-add with core.autocrlf=false.  Only the index is affected; the
+    # working tree is never touched, so this is safe to run unattended.
+    "index_nuke_rebuild": RemediationRule(
+        destructive=False,
+        allow_ci=True,
+        allow_autofix=True,
+        requires_interactive=False,
+        requires_confirmation=False,
+    ),
     "configure_git_lfs_tracking": RemediationRule(
         destructive=False,
         allow_ci=True,

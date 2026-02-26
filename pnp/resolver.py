@@ -492,7 +492,13 @@ class Handlers:
             self.success("index rebuilt and files restaged (line-ending warnings only)")
             return StepResult.RETRY
         if readd_cp.returncode != 0 and self._is_line_ending_warning(readd_detail):
-            if handoff_allowed:
+            # If the re-add stderr still contains a mismatch pattern the index
+            # was not actually fixed by the reset.  Handing off to line_endings()
+            # in that state causes it to call _renormalize_line_endings, which
+            # calls back here with handoff_allowed=False, creating a loop that
+            # always ends in FAIL.  Skip the handoff and fall through to the
+            # core.autocrlf=false path which can break the cycle.
+            if handoff_allowed and not self._is_index_worktree_mismatch(readd_detail):
                 _emit_remediation_event(
                     action,
                     "success",
@@ -555,6 +561,46 @@ class Handlers:
                 "failed",
                 {"reason": fallback_detail or "line-ending warning persisted after index rebuild"},
             )
+            # Last resort: wipe the index entirely and rebuild it with
+            # autocrlf disabled.  This handles the case where the index is
+            # genuinely corrupt and neither --renormalize nor a simple reset
+            # can repair it (common on Windows when core.autocrlf=true and
+            # the working tree already has LF-only files).
+            self.warn("attempting nuclear index rebuild (git rm --cached -r . + re-add)")
+            allowed_nuke, _ = self._allow_remediation("index_nuke_rebuild")
+            if allowed_nuke:
+                nuke_rm = _run(
+                    ["git", "rm", "--cached", "-r", ".", "--ignore-unmatch"],
+                    cwd, check=False,
+                )
+                nuke_add = _run(
+                    ["git", "-c", "core.autocrlf=false", "add", "-A"],
+                    cwd, check=False,
+                )
+                nuke_detail = (nuke_add.stderr or nuke_add.stdout or "").strip()
+                if nuke_add.returncode == 0:
+                    _emit_remediation_event(
+                        action,
+                        "success",
+                        {"mode": "nuclear_index_rebuild"},
+                    )
+                    self.success("index rebuilt from scratch; line endings normalized")
+                    return StepResult.RETRY
+                if self._is_warning_only_line_ending(nuke_detail):
+                    _emit_remediation_event(
+                        action,
+                        "success",
+                        {"mode": "nuclear_index_rebuild_warning_only"},
+                    )
+                    self.success("index rebuilt from scratch (warnings only)")
+                    return StepResult.RETRY
+                _emit_remediation_event(
+                    action,
+                    "failed",
+                    {"reason": nuke_detail or "nuclear rebuild failed"},
+                )
+                if nuke_detail:
+                    self.warn(f"nuclear rebuild failed: {nuke_detail[:220]}")
             self.warn("manual steps: run 'git -c core.autocrlf=false add --renormalize .', then retry pnp")
             self.warn("if this still fails, run: git pnp -a --safe-reset")
             return StepResult.FAIL
