@@ -184,6 +184,28 @@ def _timeout_budget_for(code: str) -> float:
     return TIMEOUT_BUDGET_BY_CODE_S.get(token, DEFAULT_STEP_TIMEOUT_BUDGET_S)
 
 
+def _is_lf_warning_only(text: str) -> bool:
+    """
+    Return True when git stderr contains only LF/CRLF conversion
+    warnings and no hard error tokens.
+
+    On Windows with core.autocrlf=true, git exits 1 when it converts
+    line endings even though every file was staged correctly.  These
+    exits must not be routed to the resolver or treated as failures.
+    """
+    if not text:
+        return False
+    lowered = text.lower()
+    has_lf_warn = (
+        "lf will be replaced by crlf" in lowered
+        or "crlf will be replaced by lf" in lowered
+    )
+    if not has_lf_warn:
+        return False
+    hard_errors = ("fatal:", "error:", "unable to", "failed to", "cannot ")
+    return not any(token in lowered for token in hard_errors)
+
+
 def run_git(args: list[str], cwd: str, capture: bool = True,
             tries: int = 0, started_at: float | None = None,
             timeout_budget_s: float | None = None,
@@ -239,6 +261,12 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
             resolver.resolve.maybe_pop_stash(cwd)
         except Exception:
             pass
+        return 0, out
+
+    # On Windows with core.autocrlf=true, git exits 1 for LF->CRLF
+    # conversion warnings even though staging succeeded.  Return 0
+    # immediately so the resolver chain is never invoked for this case.
+    if _is_lf_warning_only(stderr):
         return 0, out
 
     # nothing to handle
@@ -378,33 +406,9 @@ def has_uncommitted(path: str) -> bool:
     return bool(out.strip())
 
 
-def _is_add_error(out: str) -> bool:
-    """
-    Return True only if output contains a real git add failure.
-
-    On Windows with core.autocrlf=true, git exits 1 when it converts
-    LF->CRLF even though every file was staged correctly.  Those
-    warning-only exits must not be treated as errors.
-    """
-    lowered     = out.lower()
-    hard_errors = ("fatal:", "error:", "unable to", "failed to", "cannot ")
-    has_error   = any(t in lowered for t in hard_errors)
-    has_lf_warn = (
-        "lf will be replaced by crlf" in lowered
-        or "crlf will be replaced by lf" in lowered
-    )
-    # Pure LF/CRLF conversion warning with no hard error -> staging succeeded.
-    if has_lf_warn and not has_error:
-        return False
-    return has_error or (not has_lf_warn)
-
-
 def stage_all(path: str) -> None:
     rc, out = run_git(["add", "-A"], cwd=path)
-    if rc != 0 and not _is_add_error(out):
-        return  # LF-only warning on Windows; staging succeeded
-    if rc != 0:
-        raise RuntimeError("git add failed: " + out)
+    if rc != 0: raise RuntimeError("git add failed: " + out)
 
 
 def commit(path: str, message: str | None,
