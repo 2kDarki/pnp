@@ -378,7 +378,7 @@ class Handlers:
                         {"mode": "fallback_add_all"},
                     )
                     self.success("line endings normalized (fallback mode)")
-                    return StepResult.RETRY
+                    return StepResult.OK
                 fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
                 token = fallback_detail or detail
                 if self._is_index_worktree_mismatch(token):
@@ -411,7 +411,7 @@ class Handlers:
             return StepResult.FAIL
         _emit_remediation_event("renormalize_line_endings", "success")
         self.success("line endings renormalized")
-        return StepResult.RETRY
+        return StepResult.OK
 
     def _is_index_worktree_mismatch(self, stderr: str) -> bool:
         lowered = stderr.lower()
@@ -481,8 +481,6 @@ class Handlers:
                 {"mode": "index_rebuild_restage"},
             )
             self.success("index rebuilt and files restaged")
-            # Staging is complete; return OK so run_git does not
-            # re-run the original command and hit the same mismatch.
             return StepResult.OK
         readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
         if readd_cp.returncode != 0 and self._is_warning_only_line_ending(readd_detail):
@@ -516,9 +514,6 @@ class Handlers:
                     {"mode": "index_rebuild_autocrlf_override_renormalize"},
                 )
                 self.success("line-ending staging succeeded with core.autocrlf=false")
-                # Staging is complete via autocrlf=false; return OK so
-                # run_git does not re-run the original command which
-                # would hit the same mismatch again.
                 return StepResult.OK
             fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
             if self._is_warning_only_line_ending(fallback_detail):
