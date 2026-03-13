@@ -211,8 +211,8 @@ def error_policy_for(
     fallback_category: str = "workflow",
 ) -> dict[str, str]:
     """Resolve canonical severity/category for a stable code."""
-    code = canonical_error_code(code)
-    policy = ERROR_CODE_POLICY.get(code, {})
+    code     = canonical_error_code(code)
+    policy   = ERROR_CODE_POLICY.get(code, {})
     severity = str(policy.get("severity", fallback_severity)).strip()
     category = str(policy.get("category", fallback_category)).strip()
     return {

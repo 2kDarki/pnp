@@ -19,16 +19,15 @@ def _now() -> str:
 
 
 def _read_json(path: Path) -> dict[str, Any] | None:
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
+    try: return json.loads(path.read_text(encoding="utf-8"))
+    except Exception: return None
 
 
 def _tail_lines(path: Path, max_lines: int = 200) -> list[str]:
     try:
         with path.open("r", encoding="utf-8") as f:
-            return list(deque((line.rstrip("\n") for line in f), maxlen=max_lines))
+            return list(deque((line.rstrip("\n")
+               for line in f), maxlen=max_lines))
     except Exception: return []
 
 
@@ -82,14 +81,15 @@ def _env_snapshot() -> dict[str, str]:
         "LANG",
         "LC_ALL",
     ]
-    return {k: os.environ.get(k, "") for k in allow if os.environ.get(k) is not None}
+    return {k: os.environ.get(k, "") for k in allow
+        if os.environ.get(k) is not None}
 
 
 def _report_path(args: Namespace, target: str, run_id: str) -> Path:
     override = str(getattr(args, "debug_report_file", "") or "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-    return (Path(target) / "pnplog" / f"debug-report-{run_id}.json").resolve()
+    if override: return Path(override).expanduser().resolve()
+    return (Path(target) / "pnplog"
+         / f"debug-report-{run_id}.json").resolve()
 
 
 def build_debug_report(args: Namespace) -> Path:
@@ -97,13 +97,16 @@ def build_debug_report(args: Namespace) -> Path:
     target = os.path.abspath(getattr(args, "path", "."))
     if os.path.isfile(target):
         target = os.path.dirname(target)
-    run_id = telemetry.run_id()
-    log_dir = Path(target) / "pnplog"
+    run_id      = telemetry.run_id()
+    log_dir     = Path(target) / "pnplog"
     events_file = log_dir / "events.jsonl"
-    events = _tail_jsonl(events_file, max_rows=400)
-    decisions = [e for e in events if e.get("event_type") == "resolver_decision"]
-    retries = [e for e in events if e.get("event_type") == "retry"]
-    envelope = _read_json(log_dir / "last_error_envelope.json")
+    events      = _tail_jsonl(events_file, max_rows=400)
+    decisions   = [e for e in events if e.get("event_type"
+                  ) == "resolver_decision"]
+    retries     = [e for e in events if e.get("event_type"
+                  ) == "retry"]
+    envelope    = _read_json(log_dir
+                / "last_error_envelope.json")
     payload: dict[str, Any] = {
         "report_version": "1",
         "tool": "pnp",
@@ -127,7 +130,7 @@ def build_debug_report(args: Namespace) -> Path:
         "events_tail": events[-120:],
         "debug_log_tail": _tail_lines(log_dir / "debug.log", max_lines=200),
     }
-    sanitized = telemetry.redact(payload)
+    sanitized   = telemetry.redact(payload)
     report_path = _report_path(args, target, run_id)
     report_path.parent.mkdir(parents=True, exist_ok=True)
     report_path.write_text(json.dumps(sanitized, indent=2), encoding="utf-8")

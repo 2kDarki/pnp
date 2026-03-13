@@ -7,8 +7,6 @@ Precedence order (low -> high):
 4) environment variables
 5) explicit CLI options
 """
-
-
 from argparse import Namespace, ArgumentParser
 from dataclasses import dataclass
 from pathlib import Path
@@ -151,7 +149,7 @@ def _load_pyproject_overrides(path: str
     values: dict[str, object] = {}
     diagnostics: list[dict[str, str]] = []
     for raw_key, raw_val in table.items():
-        key = str(raw_key).strip().lower().replace("_", "-")
+        key  = str(raw_key).strip().lower().replace("_", "-")
         spec = key_to_spec.get(key)
         if spec is None:
             msg = "unknown key in [tool.pnp]; use one of documented pnp keys"

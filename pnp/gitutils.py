@@ -99,7 +99,7 @@ RETRY_POLICY_BY_CODE: dict[str, dict[str, float | int | bool]] = {
     },
     "PNP_GIT_LINE_ENDING_NORMALIZATION": {
         "retryable": True,
-        "max_retries": 3,
+        "max_retries": 2,
         "base_delay_s": 0.05,
         "max_delay_s": 0.20,
         "jitter_s": 0.02,
@@ -186,23 +186,21 @@ def _timeout_budget_for(code: str) -> float:
 
 def _is_lf_warning_only(text: str) -> bool:
     """
-    Return True when git stderr contains only LF/CRLF conversion
-    warnings and no hard error tokens.
+    Return True when git stderr contains only LF/CRLF
+    conversion warnings and no hard error tokens.
 
-    On Windows with core.autocrlf=true, git exits 1 when it converts
-    line endings even though every file was staged correctly.  These
-    exits must not be routed to the resolver or treated as failures.
+    On Windows with core.autocrlf=true, git exits 1 when it
+    converts line endings even though every file was staged
+    correctly. These exits must not be routed to the resolver
+    or treated as failures.
     """
-    if not text:
-        return False
-    lowered = text.lower()
-    has_lf_warn = (
-        "lf will be replaced by crlf" in lowered
-        or "crlf will be replaced by lf" in lowered
-    )
-    if not has_lf_warn:
-        return False
-    hard_errors = ("fatal:", "error:", "unable to", "failed to", "cannot ")
+    if not text: return False
+    lowered     = text.lower()
+    has_lf_warn = "lf will be replaced by crlf" in lowered \
+               or "crlf will be replaced by lf" in lowered
+    if not has_lf_warn: return False
+    hard_errors = ("fatal:", "error:", "unable to",
+                 "failed to", "cannot ")
     return not any(token in lowered for token in hard_errors)
 
 
@@ -235,10 +233,12 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     if failure_counts is None: failure_counts = {}
     if signature_counts is None: signature_counts = {}
     if retry_counts is None: retry_counts = {}
-    elapsed = now - started_at
+
+    elapsed   = now - started_at
     remaining = timeout_budget_s - elapsed
     if remaining <= 0:
         return 124, "git step timeout budget exceeded"
+
     try:
         proc = subprocess.run(
             ["git"] + args,
@@ -250,6 +250,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     except subprocess.TimeoutExpired:
         return 124, "git step timeout budget exceeded"
     except KeyboardInterrupt: return 130, "cancelled by user"
+
     stdout = proc.stdout or ""
     stderr = proc.stderr or ""
     out    = (stdout or stderr).strip()
@@ -257,17 +258,15 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
     # Successful git commands often emit progress/warnings on
     # stderr. Treat non-zero return codes as failure signals.
     if proc.returncode == 0:
-        try:
-            resolver.resolve.maybe_pop_stash(cwd)
-        except Exception:
-            pass
+        try: resolver.resolve.maybe_pop_stash(cwd)
+        except Exception: pass
         return 0, out
 
-    # On Windows with core.autocrlf=true, git exits 1 for LF->CRLF
-    # conversion warnings even though staging succeeded.  Return 0
-    # immediately so the resolver chain is never invoked for this case.
-    if _is_lf_warning_only(stderr):
-        return 0, out
+    # On Windows with core.autocrlf=true, git exits 1 
+    # for LF->CRLF conversion warnings even though staging
+    # succeeded. Return 0 immediately so the resolver chain
+    # is never invoked for this case.
+    if _is_lf_warning_only(stderr): return 0, out
 
     # nothing to handle
     if not stderr: return proc.returncode, out
@@ -314,10 +313,10 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         failure_counts[code] = failure_counts.get(code, 0) + 1
         if failure_counts[code] > CIRCUIT_BREAKER_MAX_PER_CODE:
             if result is StepResult.RETRY:
-                policy = _retry_policy_for(code)
+                policy      = _retry_policy_for(code)
                 max_retries = int(policy.get("max_retries", 0))
-                retryable = bool(policy.get("retryable", False))
-                code_tries = retry_counts.get(code, 0)
+                retryable   = bool(policy.get("retryable", False))
+                code_tries  = retry_counts.get(code, 0)
                 if not retryable and code_tries == 0:
                     retryable = True
                     max_retries = 1
@@ -329,19 +328,21 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         policy = _retry_policy_for(code)
         if code:
             timeout_budget_s = min(timeout_budget_s, _timeout_budget_for(code))
-        code_tries = retry_counts.get(code, 0)
+        code_tries  = retry_counts.get(code, 0)
         max_retries = int(policy.get("max_retries", 0))
-        retryable = bool(policy.get("retryable", False))
-        # Resolver handlers return RETRY only after an explicit remediation path.
-        # Allow one immediate retry even for denylisted codes so repaired state
-        # can be re-evaluated in the same invocation.
+        retryable   = bool(policy.get("retryable", False))
+        # Resolver handlers return RETRY only after an
+        # explicit remediation path.
+        # Allow one immediate retry even for denylisted codes
+        # so repaired state can be re-evaluated in the same
+        # invocation.
         if not retryable and code_tries == 0:
             retryable = True
             max_retries = 1
         if retryable and code_tries < max_retries:
             attempt = code_tries + 1
             delay_s = _retry_delay_seconds(code_tries, policy)
-            elapsed = time.monotonic() - started_at
+            elapsed   = time.monotonic() - started_at
             remaining = timeout_budget_s - elapsed
             if remaining <= 0:
                 return 124, "git step timeout budget exceeded"
@@ -363,8 +364,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
                 },
             )
             echo.prompt(f"retrying step ({attempt}/{max_retries})...")
-            if code:
-                retry_counts[code] = attempt
+            if code: retry_counts[code] = attempt
             return run_git(args, cwd=cwd, capture=capture,
                    tries=attempt,
                    started_at=started_at,

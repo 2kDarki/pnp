@@ -88,9 +88,9 @@ def _emit_runtime_failure_ux(
     code    = str(envelope.get("code", "")).strip()
     step    = str(envelope.get("step", "")).strip()
     message = str(envelope.get("message", "")).strip()
-    summary, one_liner = COMMON_FAILURE_FIXES.get(
-        code,
-        ("workflow failed", "Inspect pnplog and rerun with --debug-report."),
+    summary, one_liner = COMMON_FAILURE_FIXES.get(code,
+        ("workflow failed",
+        "Inspect pnplog and rerun with --debug-report."),
     )
     telemetry.emit_event(
         event_type="error_signal",
@@ -134,9 +134,9 @@ def _build_runtime_error_envelope(
     failure_hint: FailureEvent | dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Build a stable envelope for non-JSON workflow failures."""
-    code = "PNP_INT_UNHANDLED_EXCEPTION"
+    code     = "PNP_INT_UNHANDLED_EXCEPTION"
     severity = "error"
-    message = str(error).strip() or "workflow failure"
+    message  = str(error).strip() or "workflow failure"
     suggested_fix = "Run with --debug for traceback and inspect pnplog."
 
     hint_step     = ""
@@ -181,8 +181,7 @@ def _build_runtime_error_envelope(
             preferred_code=hint_code,
             fallback_code="PNP_INT_WORKFLOW_EXIT_NONZERO",
         )
-        if hint_message:
-            message = hint_message
+        if hint_message: message = hint_message
 
     policy = error_policy_for(
         code,
@@ -405,14 +404,13 @@ def main() -> None:
             if isinstance(e.code, int): code = e.code
         if not isinstance(e, exit): out.warn(f"ERROR: {e}")
         elif not isinstance(e, exit[2]):
-            i = 1 if not isinstance(e, exit[1]) else 2
-            out.raw("\n" * i + const.PNP, end="")
+            nl = 1 if not isinstance(e, exit[1]) else 2
+            out.raw("\n" * nl + const.PNP, end="")
             out.raw(utils.color("forced exit", const.BAD))
     finally:
         if code != 0 and last_error is not None:
-            envelope = _build_runtime_error_envelope(
-                args, last_error, code, last_failure_hint
-            )
+            envelope = _build_runtime_error_envelope(args,
+                       last_error, code, last_failure_hint)
             _emit_runtime_failure_ux(args, envelope, out)
             _persist_runtime_error_envelope(args, envelope, out)
         if getattr(args, "debug_report", False):

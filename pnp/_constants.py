@@ -1,6 +1,4 @@
 """Constants across pnp."""
-
-
 from argparse import Namespace
 
 from tuikit.textools import style_text as color
@@ -42,15 +40,15 @@ def sync_runtime_flags(args: Namespace) -> None:
     PLAIN           = bool(getattr(args, "plain", False))
     DEBUG           = bool(getattr(args, "debug", False))
     AUTOFIX         = bool(getattr(args, "auto_fix", False)
-                    or getattr(args, "batch_commit", False))
+                   or getattr(args, "batch_commit", False))
     DRY_RUN         = bool(getattr(args, "dry_run", False))
     QUIET           = bool(getattr(args, "quiet", False))
     NO_TRANSMISSION = bool(getattr(args, "no_transmission", False))
     GH_REPO         = getattr(args, "gh_repo", None)
     CI_MODE         = bool(getattr(args, "ci", False)
-                    or getattr(args, "quiet", False)
-                    or getattr(args, "plain", False)
-                    or not getattr(args, "interactive", False))
+                   or getattr(args, "quiet", False)
+                   or getattr(args, "plain", False)
+                   or not getattr(args, "interactive", False))
     ALLOW_SAFE_RESET = bool(getattr(args, "safe_reset", False))
     ALLOW_DESTRUCTIVE_RESET = bool(
         getattr(args, "destructive_reset", False)

@@ -1,24 +1,24 @@
 """Health and preflight checks extracted from CLI module."""
+from collections.abc import Iterable
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Callable
 from pathlib import Path
-from collections.abc import Iterable
 import subprocess
 import argparse
 import tempfile
+import shlex
 import time
 import json
 import sys
 import os
-import shlex
 
 try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
     import tomli as tomllib  # type: ignore[no-redef]
 
-from .error_model import build_error_envelope
 from .project_adapters import resolve_project_adapter
+from .error_model import build_error_envelope
 from . import _constants as const
 from .tui import tui_runner
 from .ops import run_hook
@@ -117,6 +117,7 @@ def _doctor_error_envelope(
         "ci_mode": bool(const.CI_MODE),
         "dry_run": bool(const.DRY_RUN),
     }
+
     if failures > 0:
         assert first_fail is not None
         msg = f"doctor reported {failures} critical issue(s)"
@@ -131,6 +132,7 @@ def _doctor_error_envelope(
             suggested_fix="Resolve failing doctor checks and rerun --doctor.",
             context=context,
         )
+
     if warnings > 0:
         assert first_warn is not None
         msg = f"doctor reported {warnings} warning(s)"
@@ -145,6 +147,7 @@ def _doctor_error_envelope(
             suggested_fix="Review warning checks and resolve if required.",
             context=context,
         )
+
     return _build_error_envelope(
         code="PNP_DOCTOR_HEALTHY",
         severity="info",
@@ -169,10 +172,11 @@ def _check_error_envelope(
     repo: str | None,
 ) -> dict[str, object]:
     """Build envelope for check-only JSON output."""
-    first_blocker = next((f for f in findings if f["level"]
-                    == "blocker"), None)
-    first_warn    = next((f for f in findings if f["level"]
-                    == "warn"), None)
+    first_blocker = next((f for f in findings
+                 if f["level"] == "blocker"), None)
+    first_warn    = next((f for f in findings
+                 if f["level"] == "warn"), None)
+
     context = {
         "path": os.path.abspath(args.path),
         "repo": repo or "",
@@ -180,6 +184,7 @@ def _check_error_envelope(
         "ci_mode": bool(const.CI_MODE),
         "dry_run": bool(const.DRY_RUN),
     }
+
     if exit_code == 20 and first_blocker:
         return _build_error_envelope(
             code="PNP_CHECK_BLOCKERS",
@@ -192,6 +197,7 @@ def _check_error_envelope(
             suggested_fix="Resolve blockers and rerun --check-only.",
             context=context,
         )
+
     if exit_code == 10 and first_warn:
         return _build_error_envelope(
             code="PNP_CHECK_WARNINGS",
@@ -204,6 +210,7 @@ def _check_error_envelope(
             suggested_fix="Review warnings or run with --strict to enforce.",
             context=context,
         )
+
     return _build_error_envelope(
         code="PNP_CHECK_CLEAN",
         severity="info",
@@ -388,10 +395,11 @@ def _load_adapter_pyproject_config(project_root: str) -> tuple[str | None, dict[
     if not pyproject.is_file(): return None, {}
     try:
         data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-    except Exception:
-        return None, {}
+    except Exception: return None, {}
+
     tool = data.get("tool")
     if not isinstance(tool, dict): return None, {}
+
     table = tool.get("pnp")
     if not isinstance(table, dict): return None, {}
 
@@ -917,7 +925,7 @@ def run_doctor(path: str, out: utils.Output,
         return 1
     if warnings:
         utils.transmit(
-            utils.wrap("doctor summary: " + f"0 critical issue(s), {warnings} warning(s)"),
+            utils.wrap("doctor summary: " + f"0 critical issues, {warnings} warning(s)"),
             fg=const.PROMPT,
             quiet=out.quiet,
         )

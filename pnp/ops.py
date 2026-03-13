@@ -58,27 +58,25 @@ def run_machete(repo: str, dry_run: bool,
             out.info(const.DRYRUN + "would run: "
                + " ".join(cmd), step_idx=step_idx)
             continue
+
         utils.suspend_console()
-        try:
-            cp = run_command(cmd, cwd=repo)
-        finally:
-            utils.resume_console()
+        try: cp = run_command(cmd, cwd=repo)
+        finally: utils.resume_console()
+    
         if cp.returncode != 0:
             detail = cp.stderr.strip() or cp.stdout.strip() \
                   or f"git machete {label} failed"
             return detail, utils.StepResult.ABORT
+
         out.success(f"git machete {label}: ok",
             step_idx=step_idx)
+
     return None, utils.StepResult.OK
 
 
 def run_hook(cmd: str, cwd: str, dryrun: bool,
              no_transmission: bool = False) -> int:
-    """Run a validated hook command safely with optional dry-run."""
-    if re.search(r"[$&;|><`()]", cmd):
-        err = f"rejected potentially unsafe hook: {cmd!r}"
-        raise ValueError(err)
-
+    """Run a non-validated hook command with optional dry-run."""
     exclude = "drace", "pytest"
     capture = not no_transmission \
           and not utils.any_in(exclude, eq=cmd)
@@ -89,27 +87,17 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     args = cmd.split()
     if not args: raise ValueError("hook command is empty")
 
-    disallowed = {
-        "rm", "mv", "dd", "shutdown", "reboot", "mkfs",
-        "kill", "killall", ">:(", "sudo", "tsu", "chown",
-        "chmod", "wget", "curl",
-    }
-    raw_cmd = os.path.basename(args[0]).lower()
-    if raw_cmd in disallowed:
-        err = f"hook command '{raw_cmd}' not allowed"
-        raise ValueError(err)
-
     add = f" {const.DRYRUN}skips" if dryrun else ""
     m   = utils.wrap(f"[{prefix}] {cmd}{add}")
     utils.transmit(m, fg=const.GOOD)
     if dryrun: return 0
 
-    utils.suspend_console()
+    if const.CI_MODE: utils.suspend_console()
     try:
         if "pytest" in cmd: print()
-
         proc   = subprocess.run(cmd, cwd=cwd, shell=True,
-                 check=False, text=True, capture_output=capture)
+                 check=False, text=True,
+                 capture_output=capture)
         code   = proc.returncode
         stdout = proc.stdout
         stderr = proc.stderr
@@ -124,7 +112,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
                 time.sleep(0.005)
             print()
     finally:
-        utils.resume_console()
+        if const.CI_MODE: utils.resume_console()
     return code
 
 
@@ -179,8 +167,7 @@ def manage_git_extension_install(out: utils.Output,
         bin_dir.mkdir(parents=True, exist_ok=True)
         for script, content, mode in scripts:
             script.write_text(content, encoding="utf-8")
-            if mode is not None:
-                script.chmod(mode)
+            if mode is not None: script.chmod(mode)
     except Exception as e:
         out.warn(f"failed to install git extension shim: {e}")
         return 1

@@ -1,12 +1,12 @@
 """Project-type adapter registry for workflow-specific behavior."""
 
 
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Protocol
 import json
 import os
 import re
-import xml.etree.ElementTree as ET
 
 try: import tomllib
 except ModuleNotFoundError:  # pragma: no cover
@@ -124,8 +124,7 @@ class ManifestSeedAdapter(GenericAdapter):
                 project_root=project_root,
             )
         seed = self.manifest_version(project_root)
-        if seed:
-            return f"{prefix}{seed}"
+        if seed: return f"{prefix}{seed}"
         return super().compute_next_tag(
             latest_tag=latest_tag,
             bump=bump,
@@ -136,11 +135,14 @@ class ManifestSeedAdapter(GenericAdapter):
 
 def _semver_core(value: object) -> str | None:
     if not isinstance(value, str): return None
+
     text = value.strip()
     if not text: return None
-    text = text.removeprefix("v")
+
+    text  = text.removeprefix("v")
     match = re.match(r"^(\d+)\.(\d+)\.(\d+)", text)
     if not match: return None
+
     major, minor, patch = match.groups()
     return f"{int(major)}.{int(minor)}.{int(patch)}"
 
@@ -154,8 +156,7 @@ class NodeAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
-            return None
+        except Exception: return None
         if not isinstance(data, dict): return None
         return _semver_core(data.get("version"))
 
@@ -163,7 +164,7 @@ class NodeAdapter(ManifestSeedAdapter):
         commands = _generic_pre_publish_commands(adapter_config)
         if not isinstance(adapter_config, dict): return commands
         build = adapter_config.get("build-script")
-        test = adapter_config.get("test-script")
+        test  = adapter_config.get("test-script")
         if isinstance(build, str) and build.strip():
             commands.append(f"npm run {build.strip()}")
         if isinstance(test, str) and test.strip():
@@ -188,8 +189,7 @@ class RustAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = tomllib.loads(f.read())
-        except Exception:
-            return None
+        except Exception: return None
         if not isinstance(data, dict): return None
         pkg = data.get("package")
         if not isinstance(pkg, dict): return None
@@ -218,8 +218,7 @@ class JavaAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 root = ET.fromstring(f.read())
-        except Exception:
-            return None
+        except Exception: return None
         queries = (
             ".//{http://maven.apache.org/POM/4.0.0}version",
             ".//version",
@@ -241,8 +240,7 @@ class PhpAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-        except Exception:
-            return None
+        except Exception: return None
         if not isinstance(data, dict): return None
         return _semver_core(data.get("version"))
 
@@ -256,8 +254,7 @@ class JuliaAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = tomllib.loads(f.read())
-        except Exception:
-            return None
+        except Exception: return None
         if not isinstance(data, dict): return None
         return _semver_core(data.get("version"))
 
@@ -273,8 +270,7 @@ class PythonAdapter(ManifestSeedAdapter):
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = tomllib.loads(f.read())
-        except Exception:
-            return None
+        except Exception: return None
         if not isinstance(data, dict): return None
         project = data.get("project")
         if not isinstance(project, dict): return None

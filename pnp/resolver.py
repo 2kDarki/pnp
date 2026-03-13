@@ -203,12 +203,12 @@ def _extract_hook_failure_details(stderr: str) -> tuple[str, str, str]:
     failure_line = ""
     for line in stderr.splitlines():
         text = line.strip()
-        if not text:
-            continue
+        if not text: continue
         if not hook_name and "hook" in text and any_in("pre-push", "pre-commit", eq=text.lower()):
             hook_name = text
         if not command_hint:
-            # common hook wrappers print shell command prefixed with $ or >
+            # common hook wrappers print shell command
+            # prefixed with $ or >
             if text.startswith("$ ") or text.startswith("> "):
                 command_hint = text[2:].strip()
             elif text.lower().startswith("running "):
@@ -352,9 +352,9 @@ class Handlers:
             result=StepResult.RETRY,
             note="would run git add --renormalize .",
         )
-        if simulated:
-            return result
-        cp = _run(["git", "add", "--renormalize", "."], cwd, check=False)
+        if simulated: return result
+        cp = _run(["git", "add", "--renormalize", "."], cwd,
+             check=False)
         if cp.returncode != 0:
             detail = (cp.stderr or cp.stdout or "").strip()
             if self._is_index_worktree_mismatch(detail):
@@ -365,12 +365,13 @@ class Handlers:
                     handoff_allowed=False,
                 )
             lowered = detail.lower()
-            old_git = any_in(
-                "unknown option", "renormalize", "usage: git add", eq=lowered
-            )
+            old_git = any_in("unknown option",
+                      "renormalize", "usage: git add",
+                      eq=lowered)
             if old_git:
                 self.warn("git add --renormalize unsupported; using compatibility fallback")
-                fallback = _run(["git", "add", "-A"], cwd, check=False)
+                fallback = _run(["git", "add", "-A"], cwd,
+                           check=False)
                 if fallback.returncode == 0:
                     _emit_remediation_event(
                         "renormalize_line_endings",
@@ -379,7 +380,9 @@ class Handlers:
                     )
                     self.success("line endings normalized (fallback mode)")
                     return StepResult.OK
-                fallback_detail = (fallback.stderr or fallback.stdout or "").strip()
+                fallback_detail = (fallback.stderr
+                               or fallback.stdout
+                               or "").strip()
                 token = fallback_detail or detail
                 if self._is_index_worktree_mismatch(token):
                     return self._recover_index_worktree_mismatch(
@@ -470,10 +473,11 @@ class Handlers:
             result=StepResult.RETRY,
             note="would run git reset --mixed && git add -A",
         )
-        if simulated:
-            return result
-        reset_cp = _run(["git", "reset", "--mixed"], cwd, check=False)
-        readd_cp = _run(["git", "add", "-A"], cwd, check=False)
+        if simulated: return result
+        reset_cp = _run(["git", "reset", "--mixed"], cwd,
+                   check=False)
+        readd_cp = _run(["git", "add", "-A"], cwd,
+                   check=False)
         if reset_cp.returncode == 0 and readd_cp.returncode == 0:
             _emit_remediation_event(
                 action,
@@ -589,16 +593,14 @@ class Handlers:
         if matched is not None:
             suggested = matched.group(1).strip().strip("'\"")
         targets: list[str] = []
-        if suggested:
-            targets.append(suggested)
+        if suggested: targets.append(suggested)
         targets.append(str(Path(cwd).resolve()))
         targets.append(cwd)
         dedup_targets: list[str] = []
         seen = set()
         for item in targets:
             token = item.strip()
-            if not token or token in seen:
-                continue
+            if not token or token in seen: continue
             seen.add(token)
             dedup_targets.append(token)
         prompt = wrap("git reported dubious ownership "
