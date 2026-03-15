@@ -92,7 +92,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     utils.transmit(m, fg=const.GOOD)
     if dryrun: return 0
 
-    if const.CI_MODE: utils.suspend_console()
+    utils.suspend_console()
     try:
         if "pytest" in cmd: print()
         proc   = subprocess.run(cmd, cwd=cwd, shell=True,
@@ -111,8 +111,7 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
                 print(line)
                 time.sleep(0.005)
             print()
-    finally:
-        if const.CI_MODE: utils.resume_console()
+    finally: utils.resume_console()
     return code
 
 

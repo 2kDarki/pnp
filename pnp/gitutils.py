@@ -262,7 +262,7 @@ def run_git(args: list[str], cwd: str, capture: bool = True,
         except Exception: pass
         return 0, out
 
-    # On Windows with core.autocrlf=true, git exits 1 
+    # On Windows with core.autocrlf=true, git exits 1
     # for LF->CRLF conversion warnings even though staging
     # succeeded. Return 0 immediately so the resolver chain
     # is never invoked for this case.

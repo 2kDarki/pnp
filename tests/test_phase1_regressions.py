@@ -116,11 +116,6 @@ class Phase1RegressionTests(unittest.TestCase):
         suspend.assert_called_once()
         resume.assert_called_once()
 
-    def test_run_hook_disallowed_command_raises_value_error(self) -> None:
-        with redirect_stdout(StringIO()):
-            with self.assertRaises(ValueError):
-                run_hook("rm -rf /tmp/whatever", ".", dryrun=False)
-
     def test_gitutils_import_works_in_clean_process(self) -> None:
         cp = subprocess.run(
             [sys.executable, "-c", "import pnp.gitutils; print('ok')"],

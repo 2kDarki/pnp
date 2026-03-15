@@ -9,12 +9,9 @@ import os
 
 from tuikit.textools import strip_ansi, Align
 
-from .error_model import (
-    FailureEvent,
-    error_policy_for,
-    resolve_failure_code,
-)
+from .error_model import FailureEvent, error_policy_for
 from .project_adapters import resolve_project_adapter
+from .error_model import resolve_failure_code
 from .project_adapters import ProjectAdapter
 from . import _constants as const
 from .tui import tui_runner
