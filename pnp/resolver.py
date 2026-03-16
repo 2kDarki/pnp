@@ -485,7 +485,7 @@ class Handlers:
                 {"mode": "index_rebuild_restage"},
             )
             self.success("index rebuilt and files restaged")
-            return StepResult.OK
+            return StepResult.RETRY
         readd_detail = (readd_cp.stderr or readd_cp.stdout or "").strip()
         if readd_cp.returncode != 0 and self._is_warning_only_line_ending(readd_detail):
             _emit_remediation_event(

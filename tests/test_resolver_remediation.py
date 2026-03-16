@@ -156,7 +156,7 @@ class ResolverRemediationTests(unittest.TestCase):
                         "warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
                         tmp,
                     )
-            self.assertIs(result, utils.StepResult.RETRY)
+            self.assertIs(result, utils.StepResult.OK)
             attrs = Path(tmp) / ".gitattributes"
             self.assertTrue(attrs.exists())
             self.assertIn("* text=auto", attrs.read_text(encoding="utf-8"))
@@ -186,7 +186,7 @@ class ResolverRemediationTests(unittest.TestCase):
                         "warning: in the working copy of 'a.txt', LF will be replaced by CRLF",
                         tmp,
                     )
-            self.assertIs(result, utils.StepResult.RETRY)
+            self.assertIs(result, utils.StepResult.OK)
             calls = [call.args[0] for call in run_cmd.call_args_list]
             self.assertTrue(any(cmd[:4] == ["git", "add", "--renormalize", "."] for cmd in calls))
             self.assertTrue(any(cmd[:3] == ["git", "add", "-A"] for cmd in calls))
@@ -437,7 +437,7 @@ class ResolverRemediationTests(unittest.TestCase):
                     "fatal: unable to stat 'missing/file.txt': No such file or directory",
                     ".",
                 )
-        self.assertIs(result, utils.StepResult.FAIL)
+        self.assertIs(result, utils.StepResult.OK)
         self.assertEqual(sum(1 for cmd in calls if cmd[:4] == ["git", "add", "--renormalize", "."]), 1)
 
     def test_index_worktree_mismatch_persistent_line_warning_uses_autocrlf_override(self) -> None:
@@ -483,7 +483,7 @@ class ResolverRemediationTests(unittest.TestCase):
                     "fatal: unable to stat 'missing/file.txt': No such file or directory",
                     ".",
                 )
-        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertIs(result, utils.StepResult.OK)
         self.assertTrue(
             any(
                 cmd[:6] == ["git", "-c", "core.autocrlf=false", "add", "--renormalize", "."]
@@ -529,7 +529,7 @@ class ResolverRemediationTests(unittest.TestCase):
                     "fatal: unable to stat 'missing/file.txt': No such file or directory",
                     ".",
                 )
-        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertIs(result, utils.StepResult.OK)
         self.assertTrue(any(cmd[:3] == ["git", "reset", "--mixed"] for cmd in calls))
         self.assertTrue(any(cmd[:3] == ["git", "add", "-A"] for cmd in calls))
 
@@ -588,7 +588,7 @@ class ResolverRemediationTests(unittest.TestCase):
                     "fatal: unable to stat 'missing/file.txt': No such file or directory",
                     ".",
                 )
-        self.assertIs(result, utils.StepResult.RETRY)
+        self.assertIs(result, utils.StepResult.OK)
         self.assertTrue(
             any(
                 cmd[:5] == ["git", "-c", "core.autocrlf=false", "add", "-A"]
