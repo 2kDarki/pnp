@@ -4,7 +4,6 @@
 [![PyPI Version](https://img.shields.io/pypi/v/git-pnp.svg)](https://pypi.org/project/git-pnp/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/git-pnp.svg)](https://pypi.org/project/git-pnp/)
 [![License](https://img.shields.io/github/license/2kDarki/pnp.svg)](LICENSE)
-[![GitHub Release](https://img.shields.io/github/v/release/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/releases)
 [![Last Commit](https://img.shields.io/github/last-commit/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/commits/main)
 [![Commit Activity](https://img.shields.io/github/commit-activity/m/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/commits/main)
 [![Repo Size](https://img.shields.io/github/repo-size/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp)
