@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from pathlib import Path
 import subprocess
+import logging
 import shutil
 import sys
 import os
@@ -18,6 +19,7 @@ from tuikit.logictools import any_in
 
 
 # ======================== LOCALS ==========================
+from .commit_gen import generate_commit_message
 from . import _constants as const
 from ._constants import *
 
@@ -34,6 +36,8 @@ PROJECT_MARKERS = (
     "mix.exs",
     "Project.toml",
 )
+
+logger = logging.getLogger(__name__)
 
 
 class MessageSink(Protocol):
@@ -57,6 +61,7 @@ def suspend_console() -> None:
     current = _active_console
     _console_stack.append(current)
     if current is None: return
+
     suspend = getattr(current, "suspend", None)
     if callable(suspend): suspend()
     else: bind_console(None)
@@ -216,10 +221,41 @@ def get_changes(cwd: str) -> dict[str, list | list[str]]:
     return changes
 
 
+def get_staged_diff() -> str:
+    """Return the currently staged diff (git diff --cached)."""
+    result = subprocess.run(
+        ["git", "diff", "--cached"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        logger.warning("git diff --cached failed: %s", result.stderr.strip())
+        return ""
+    return result.stdout
+
+
+def get_unstaged_diff() -> str:
+    """Return the unstaged working-tree diff (git diff)."""
+    result = subprocess.run(
+        ["git", "diff"],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        logger.warning("git diff failed: %s", result.stderr.strip())
+        return ""
+    return result.stdout
+
+
+def get_diff() -> str:
+    """Return the (un)staged working-tree diff"""
+    return get_staged_diff() or get_unstaged_diff()
+
+
 def classify_files(files: list[str]) -> list[str]:
     types = {
           "code": [".py", ".js", ".ts", ".go", ".sh",
-                   ".java", ".c", ".cpp"],
+                   ".java", ".c", ".cpp", ".dart"],
           "docs": [".md", ".txt", ".rst"],
          "tests": ["test", "tests"],
         "config": [".toml", ".json", ".yaml", ".yml", ".ini"]
@@ -240,7 +276,11 @@ def classify_files(files: list[str]) -> list[str]:
 
 
 def gen_commit_message(repo_root: str) -> str:
-    message = f"{APP} auto commit — "
+    message = generate_commit_message(get_diff()) \
+           or f"{APP} auto commit — "
+    
+    if message != f"{APP} auto commit — ": return message
+
     changes = get_changes(repo_root)
     files: list[str] = []
     for group in changes.values(): files.extend(group)
@@ -284,7 +324,7 @@ def gen_commit_message(repo_root: str) -> str:
 def gen_changelog(path: str, since: str | None,
                   dry_run: str | None,
                   until: str = "HEAD") -> str:
-    rng  = f"{since}..{until}" if since else until
+    rng = f"{since}..{until}" if since else until
     out = ""
     if const.DRY_RUN:
         cmd = ["git", "log", "--pretty=format:%h %s (%an)", rng]
@@ -294,7 +334,7 @@ def gen_changelog(path: str, since: str | None,
             text=True,
             capture_output=True,
         )
-        rc = int(proc.returncode)
+        rc  = int(proc.returncode)
         out = (proc.stdout or "").strip()
         err = (proc.stderr or "").strip()
     else:
@@ -304,8 +344,7 @@ def gen_changelog(path: str, since: str | None,
             cwd=path,
         )
         err = out.strip()
-    if rc != 0:
-        raise RuntimeError(f"git log failed: {err}")
+    if rc != 0: raise RuntimeError(f"git log failed: {err}")
 
     out = out.strip()
     if not out: return "- no notable changes\n"
@@ -348,14 +387,15 @@ def transmit(*text: str | tuple[str], fg: str = PROMPT,
              step_idx: int | None = None) -> None:
     if quiet: return
 
-    msg    = " ".join(map(str, text))
-    # --- TUI ACTIVE: Rich owns the terminal ---
+    msg = " ".join(map(str, text))
+    # TUI ACTIVE: Rich owns the terminal
     if _active_console is not None:
-        # Pass raw text + style hints; let Rich render styling.
+        # Pass raw text + style hints; let Rich render
+        # styling.
         _active_console.add_message(step_idx, msg, fg=fg, prfx=prfx)
         return
 
-    # --- Plain terminal path (legacy behavior) ---
+    # Plain terminal path (legacy behavior)
     if prfx: print(PNP, end="")
 
     _transmit(msg, speed=SPEED, hold=HOLD, hue=fg)
@@ -366,6 +406,7 @@ def intent(prompt: str, condition: str, action: str = "exit",
     transmit(prompt)
     _intent = input(CURSOR).strip().lower()
     if space: print()
+
     _intent = _intent[0] if _intent else "n"
     if action == "return": return _intent == condition
     if _intent != condition: sys.exit(1)
@@ -396,14 +437,12 @@ class Output:
 
     def prompt(self, msg: str, fit: bool = True,
                step_idx: int | None = None) -> None:
-        if fit and _active_console is None:
-            msg = wrap(msg)
+        if fit and _active_console is None: msg = wrap(msg)
         transmit(msg, quiet=self.quiet, step_idx=step_idx)
 
     def warn(self, msg: str, fit: bool = True,
              step_idx: int | None = None) -> None:
-        if fit and _active_console is None:
-            msg = wrap(msg)
+        if fit and _active_console is None: msg = wrap(msg)
         transmit(msg, fg=BAD, step_idx=step_idx)
 
     def abort(self, msg: str | None = None, fit: bool = True,
