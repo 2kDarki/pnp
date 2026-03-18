@@ -77,9 +77,8 @@ class Orchestrator:
         """Best-effort resolver classification from the last git error."""
         resolver_inst = getattr(self.resolver, "resolve", None)
         last = getattr(resolver_inst, "last_error", None)
-        if not isinstance(last, dict):
-            return "", "", ""
-        code = str(last.get("code", "")).strip()
+        if not isinstance(last, dict): return "", "", ""
+        code     = str(last.get("code", "")).strip()
         severity = str(last.get("severity", "")).strip()
         category = ""
         if code:
@@ -157,7 +156,7 @@ class Orchestrator:
         override = str(getattr(self.args, "project_type", "auto"))
         adapter = resolve_project_adapter(root, override=override)
         self.project_adapter = adapter
-        self.project_type = adapter.project_type
+        self.project_type    = adapter.project_type
         return adapter
 
     def _adapter_config(self, adapter: ProjectAdapter) -> dict[str, object]:
@@ -172,10 +171,9 @@ class Orchestrator:
         adapter: ProjectAdapter,
         step_idx: int | None = None,
     ) -> tuple[str | tuple[str, bool] | None, utils.StepResult]:
-        config = self._adapter_config(adapter)
+        config   = self._adapter_config(adapter)
         commands = adapter.pre_publish_commands(config)
-        if not commands:
-            return None, utils.StepResult.OK
+        if not commands: return None, utils.StepResult.OK
 
         assert self.subpkg is not None
         self.out.info(
@@ -201,10 +199,9 @@ class Orchestrator:
         adapter: ProjectAdapter,
         step_idx: int | None = None,
     ) -> tuple[str | tuple[str, bool] | None, utils.StepResult]:
-        config = self._adapter_config(adapter)
+        config   = self._adapter_config(adapter)
         commands = adapter.publish_commands(config)
-        if not commands:
-            return None, utils.StepResult.OK
+        if not commands: return None, utils.StepResult.OK
 
         assert self.subpkg is not None
         self.out.info(

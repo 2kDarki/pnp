@@ -82,7 +82,7 @@ def _timestamped_backup_name(base: Path) -> Path:
 
 def _https_fallback_remote(remote_url: str) -> str | None:
     """Return HTTPS fallback for common SSH remote formats."""
-    text = remote_url.strip()
+    text  = remote_url.strip()
     match = re.match(r"^git@([^:]+):(.+)$", text)
     if match is not None:
         host, repo = match.group(1), match.group(2)
@@ -94,30 +94,35 @@ def _https_fallback_remote(remote_url: str) -> str | None:
     return None
 
 
-def _safe_reset_manual_steps(
-    remote_url: str,
-    cwd: Path,
-    backup_dir: Path,
-    branch: str,
-) -> list[str]:
-    """Build explicit manual recovery steps after safe-reset clone failures."""
+def _safe_reset_manual_steps(remote_url: str, cwd: Path,
+                             backup_dir: Path, branch: str
+                            ) -> list[str]:
+    """Build explicit manual recovery steps after safe-reset
+    clone failures."""
     steps = [
         f"1) verify remote is reachable: git ls-remote {remote_url}",
         "2) if SSH fails, verify keys: ssh -T git@github.com",
     ]
     https_url = _https_fallback_remote(remote_url)
     if https_url:
-        steps.append(f"3) switch to HTTPS fallback: git -C {cwd} remote set-url origin {https_url}")
+        steps.append("3) switch to HTTPS fallback: git -C "
+            f"{cwd} remote set-url origin {https_url}")
     else:
-        steps.append("3) set a working HTTPS remote URL for origin")
+        steps.append("3) set a working HTTPS remote URL "
+            "for origin")
     branch_name = branch or "main"
     steps.extend(
         [
-            f"4) fresh clone manually: git clone <working-remote-url> {cwd.name}-reclone",
-            "5) copy recovered .git into repo and restore files from backup:",
+            "4) fresh clone manually: git clone "
+            f"<working-remote-url> {cwd.name}-reclone",
+            "5) copy recovered .git into repo and restore "
+            "files from backup:",
             f"   backup path: {backup_dir}",
-            f"6) retry pnp with: python -m pnp {cwd} --ci --auto-fix --safe-reset",
-            f"7) if still blocked, checkout branch explicitly: git -C {cwd} checkout {branch_name}",
+            f"6) retry pnp with: python -m pnp {cwd} "
+            "--ci --auto-fix --safe-reset",
+            "7) if still blocked, checkout branch "
+            f"explicitly: git -C {cwd} checkout "
+            f"{branch_name}",
         ]
     )
     return steps
@@ -179,7 +184,7 @@ def _extract_large_file_details(stderr: str) -> tuple[str, str, str]:
     )
     file_path = file_match.group(1) if file_match else ""
     file_size = file_match.group(2) if file_match else ""
-    limit = limit_match.group(1) if limit_match else ""
+    limit     = limit_match.group(1) if limit_match else ""
     return file_path.strip("'\""), file_size, limit
 
 
@@ -190,15 +195,15 @@ def _extract_submodule_path(stderr: str) -> str:
         r"submodule ['\"]([^'\"]+)['\"]",
     )
     for pattern in patterns:
-        match = re.search(pattern, stderr, flags=re.IGNORECASE)
-        if match is not None:
-            return match.group(1).strip()
+        match = re.search(pattern, stderr,
+                flags=re.IGNORECASE)
+        if match is not None: return match.group(1).strip()
     return ""
 
 
 def _extract_hook_failure_details(stderr: str) -> tuple[str, str, str]:
     """Best-effort extraction of hook name, command hint, and failure line."""
-    hook_name = ""
+    hook_name    = ""
     command_hint = ""
     failure_line = ""
     for line in stderr.splitlines():
@@ -251,7 +256,7 @@ class Handlers:
 
     def decide(self, stderr: str, cwd: str) -> PolicyDecision:
         """Dispatch and return a typed policy decision."""
-        cls = self.classify(stderr)
+        cls             = self.classify(stderr)
         self.last_error = cls.as_dict()
         def _on_unhandled() -> None:
             print()
@@ -305,18 +310,15 @@ class Handlers:
         _emit_remediation_event(action, outcome, detail)
         return allowed, reason
 
-    def _simulate_remediation(
-        self,
-        action: str,
-        result: StepResult,
-        note: str = "",
-    ) -> tuple[bool, StepResult]:
+    def _simulate_remediation(self, action: str,
+                              result: StepResult,
+                              note: str = ""
+                             ) -> tuple[bool, StepResult]:
         if not const.DRY_RUN: return False, result
         msg = f"{const.DRYRUN}simulate remediation: {action}"
         self.prompt(msg)
         detail: dict[str, str] = {"result": str(result.value)}
-        if note:
-            detail["note"] = note
+        if note: detail["note"] = note
         _emit_remediation_event(action, "simulated", detail)
         return True, result
 
@@ -329,7 +331,8 @@ class Handlers:
             self.warn(reason)
             return
         try:
-            cp = _run(["git", "stash", "pop"], cwd, check=False)
+            cp = _run(["git", "stash", "pop"], cwd,
+                 check=False)
             if cp.returncode == 0:
                 _emit_remediation_event("auto_stash_pop", "success")
             else:
@@ -339,8 +342,7 @@ class Handlers:
                     {"reason": (cp.stderr or cp.stdout or "").strip()},
                 )
                 self.warn("auto stash pop failed; resolve manually")
-        finally:
-            self._pending_stash_pop.discard(path)
+        finally: self._pending_stash_pop.discard(path)
 
     def _renormalize_line_endings(self, cwd: str) -> StepResult:
         allowed, reason = self._allow_remediation("renormalize_line_endings")

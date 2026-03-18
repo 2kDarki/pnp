@@ -47,12 +47,10 @@ class TUIRunner:
                    ) -> None:
         if not self.enabled or idx is None:
             # fallback: print directly if step index unknown
-            text = utils.wrap(msg) if prfx else msg
+            text   = utils.wrap(msg) if prfx else msg
             styled = utils.color(text, fg)
-            if prfx:
-                print(f"{utils.const.PNP}{styled}")
-            else:
-                print(styled)
+            if prfx: print(f"{utils.const.PNP}{styled}")
+            else: print(styled)
             return
         self._messages[idx].append((msg, fg, prfx))
         self._refresh()
@@ -96,19 +94,21 @@ class TUIRunner:
 
     def start(self, idx: int) -> None:
         if not self.enabled: return
-        self.statuses[idx] = StepStatus.RUNNING
+        self.statuses[idx]  = StepStatus.RUNNING
         self._spinners[idx] = Spinner("dots",
                               text=self.labels[idx])
         self._refresh()
 
     def finish(self, idx: int, result: object) -> None:
         if not self.enabled: return
+
         status_name = getattr(result, "name", "").lower()
         if status_name == "ok":
             self.statuses[idx] = StepStatus.DONE
         elif status_name == "abort":
             self.statuses[idx] = StepStatus.ABORT
         else: self.statuses[idx] = StepStatus.FAIL
+
         # Remove spinner after finish
         self._spinners[idx] = None
         self._refresh()
@@ -122,7 +122,7 @@ class TUIRunner:
         table.add_column(justify="left")
     
         for i, (label, status) in enumerate(zip(self.labels,
-                                            self.statuses)):
+                self.statuses)):
             step_render = self._row(label, status)
     
             if self._messages[i]:
