@@ -1,6 +1,4 @@
 """Unit tests for core pure utility behavior."""
-
-
 from subprocess import CompletedProcess
 from unittest.mock import patch
 from pathlib import Path
@@ -106,5 +104,4 @@ class UtilsCoreTests(unittest.TestCase):
             self.assertIsNone(detected)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

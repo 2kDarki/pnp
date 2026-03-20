@@ -1,6 +1,4 @@
 """Telemetry redaction and event-shape tests."""
-
-
 from pathlib import Path
 import tempfile
 import unittest
@@ -41,5 +39,4 @@ class TelemetryTests(unittest.TestCase):
         self.assertIn("<redacted>", text)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

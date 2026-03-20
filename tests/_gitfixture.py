@@ -1,6 +1,4 @@
 """Deterministic helpers for local git integration tests."""
-
-
 from pathlib import Path
 import subprocess
 import tempfile

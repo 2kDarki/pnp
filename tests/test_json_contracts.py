@@ -1,6 +1,4 @@
 """Regression tests for machine-readable JSON contracts."""
-
-
 import subprocess
 import unittest
 import json
@@ -9,7 +7,7 @@ import sys
 
 def _extract_json(stdout: str) -> dict[str, object]:
     start = stdout.find("{")
-    end = stdout.rfind("}")
+    end   = stdout.rfind("}")
     if start == -1 or end == -1 or end <= start:
         raise AssertionError("no JSON object found in output")
     blob = stdout[start:end + 1]
@@ -88,5 +86,4 @@ class JsonContractTests(unittest.TestCase):
         _assert_error_envelope(payload)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

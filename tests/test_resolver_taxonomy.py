@@ -1,6 +1,4 @@
 """Resolver classification and taxonomy stability tests."""
-
-
 from unittest.mock import patch
 import unittest
 
@@ -13,46 +11,46 @@ class ResolverTaxonomyTests(unittest.TestCase):
         resolver.reset_resolver_telemetry()
 
     def test_classify_network_connectivity(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: could not resolve host: github.com")
         self.assertEqual(cls.code, "PNP_NET_CONNECTIVITY")
         self.assertEqual(cls.severity, "error")
         self.assertEqual(cls.handler, "internet_con_err")
 
     def test_classify_dubious_ownership(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: detected dubious ownership in repository")
         self.assertEqual(cls.code, "PNP_GIT_DUBIOUS_OWNERSHIP")
         self.assertEqual(cls.severity, "warn")
         self.assertEqual(cls.handler, "dubious_ownership")
 
     def test_classify_invalid_object(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: invalid object 123")
         self.assertEqual(cls.code, "PNP_GIT_INVALID_OBJECT")
         self.assertEqual(cls.severity, "error")
         self.assertEqual(cls.handler, "invalid_object")
 
     def test_classify_remote_url_invalid(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: could not read from remote repository https://bad")
         self.assertEqual(cls.code, "PNP_NET_REMOTE_URL_INVALID")
         self.assertEqual(cls.handler, "internet_con_err")
 
     def test_classify_remote_unreadable(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: could not read from remote repository")
         self.assertEqual(cls.code, "PNP_NET_REMOTE_UNREADABLE")
         self.assertEqual(cls.handler, "missing_remote")
 
     def test_classify_auth_failure(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: Authentication failed for 'https://github.com/u/r.git'")
         self.assertEqual(cls.code, "PNP_NET_AUTH_FAIL")
         self.assertEqual(cls.handler, "auth_failure")
 
     def test_classify_large_file_rejected(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify(
             "remote: error: File build/app.bin is 120.00 MB; this exceeds GitHub's file size limit of 100.00 MB"
         )
@@ -60,25 +58,25 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.handler, "large_file_rejection")
 
     def test_classify_hook_declined(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("error: pre-push hook declined")
         self.assertEqual(cls.code, "PNP_GIT_HOOK_DECLINED")
         self.assertEqual(cls.handler, "hook_declined")
 
     def test_classify_submodule_inconsistent(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: remote error: upload-pack: not our ref deadbeef")
         self.assertEqual(cls.code, "PNP_GIT_SUBMODULE_INCONSISTENT")
         self.assertEqual(cls.handler, "submodule_inconsistent")
 
     def test_classify_non_fast_forward(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("! [rejected] main -> main (non-fast-forward)")
         self.assertEqual(cls.code, "PNP_GIT_NON_FAST_FORWARD")
         self.assertEqual(cls.handler, "diverged_branch")
 
     def test_classify_protected_branch(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify(
             "remote: error: GH006: Protected branch update failed for refs/heads/main"
         )
@@ -86,7 +84,7 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.handler, "protected_branch")
 
     def test_classify_dirty_worktree(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify(
             "error: Your local changes to the following files would be overwritten by merge"
         )
@@ -94,19 +92,19 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.handler, "dirty_worktree")
 
     def test_classify_detached_head(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: You are not currently on a branch.")
         self.assertEqual(cls.code, "PNP_GIT_DETACHED_HEAD")
         self.assertEqual(cls.handler, "detached_head")
 
     def test_classify_line_ending_normalization(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("warning: in the working copy of 'x.py', LF will be replaced by CRLF")
         self.assertEqual(cls.code, "PNP_GIT_LINE_ENDING_NORMALIZATION")
         self.assertEqual(cls.handler, "line_endings")
 
     def test_classify_index_worktree_mismatch(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify(
             "error: short read while indexing NUL\n"
             "error: unable to index 'NUL'\n"
@@ -116,31 +114,31 @@ class ResolverTaxonomyTests(unittest.TestCase):
         self.assertEqual(cls.handler, "index_worktree_mismatch")
 
     def test_classify_ref_conflict(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("error: cannot lock ref 'refs/tags/v1.0.0': reference already exists")
         self.assertEqual(cls.code, "PNP_GIT_REF_CONFLICT")
         self.assertEqual(cls.handler, "ref_conflict")
 
     def test_classify_lock_contention(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: Unable to create '.git/index.lock': File exists")
         self.assertEqual(cls.code, "PNP_GIT_LOCK_CONTENTION")
         self.assertEqual(cls.handler, "lock_contention")
 
     def test_classify_upstream_missing(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: The current branch main has no upstream branch.")
         self.assertEqual(cls.code, "PNP_GIT_UPSTREAM_MISSING")
         self.assertEqual(cls.handler, "upstream_missing")
 
     def test_classify_tls_failure(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: server certificate verification failed")
         self.assertEqual(cls.code, "PNP_NET_TLS_FAIL")
         self.assertEqual(cls.handler, "internet_con_err")
 
     def test_classify_timeout(self) -> None:
-        h = resolver.Handlers()
+        h   = resolver.Handlers()
         cls = h.classify("fatal: Operation timed out after 120000 milliseconds")
         self.assertEqual(cls.code, "PNP_NET_TIMEOUT")
         self.assertEqual(cls.handler, "internet_con_err")
@@ -250,5 +248,4 @@ class ResolverTaxonomyTests(unittest.TestCase):
                          "PNP_NET_CONNECTIVITY")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

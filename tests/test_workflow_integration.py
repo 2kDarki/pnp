@@ -1,10 +1,7 @@
 """Integration scenarios for end-to-end workflow reliability."""
-
-
 from contextlib import redirect_stdout
 from argparse import Namespace
 from unittest.mock import Mock
-
 from io import StringIO
 import unittest
 
@@ -81,18 +78,18 @@ class WorkflowIntegrationTests(unittest.TestCase):
             "_pnp_adapter_config",
             {"node": {"publish-command": "false"}},
         )
-        o = Orchestrator(args, repo_path=".")
-        o.repo = "."
-        o.subpkg = "."
+        o          = Orchestrator(args, repo_path=".")
+        o.repo     = "."
+        o.subpkg   = "."
         o.resolver = _Resolver()
         o.log_text = "release"
-        o.latest = "v1.0.0"
+        o.latest   = "v1.0.0"
 
-        fake_git = Mock()
+        fake_git                          = Mock()
         fake_git.tags_sorted.return_value = []
-        fake_git.create_tag.return_value = None
-        fake_git.push.return_value = None
-        o.gitutils = fake_git
+        fake_git.create_tag.return_value  = None
+        fake_git.push.return_value        = None
+        o.gitutils                        = fake_git
 
         with redirect_stdout(StringIO()):
             msg, result = o.publish()
@@ -123,13 +120,13 @@ class WorkflowIntegrationTests(unittest.TestCase):
                 "_pnp_adapter_config",
                 {"node": {"pre-publish-hook": "false"}},
             )
-            o = Orchestrator(args, repo_path=str(repo))
-            o.repo = str(repo)
-            o.subpkg = str(repo)
+            o          = Orchestrator(args, repo_path=str(repo))
+            o.repo     = str(repo)
+            o.subpkg   = str(repo)
             o.gitutils = gitutils
             o.resolver = _Resolver()
             o.log_text = "release"
-            o.latest = "v1.0.0"
+            o.latest   = "v1.0.0"
 
             with redirect_stdout(StringIO()):
                 msg, result = o.publish()
@@ -148,9 +145,10 @@ class WorkflowIntegrationTests(unittest.TestCase):
             (repo / "README.md").write_text("hello\n", encoding="utf-8")
             fix.commit_all(repo, "init")
 
-            o = Orchestrator(_args(publish=True, path=str(repo)), repo_path=str(repo))
-            o.repo = str(repo)
-            o.subpkg = str(repo)
+            o          = Orchestrator(_args(publish=True,
+                         path=str(repo)), repo_path=str(repo))
+            o.repo     = str(repo)
+            o.subpkg   = str(repo)
             o.gitutils = gitutils
             o.resolver = _Resolver()
             o.log_text = "release"
@@ -186,23 +184,24 @@ class WorkflowIntegrationTests(unittest.TestCase):
             fix.commit_all(peer, "peer")
             fix.run(["-C", str(peer), "push", "origin", branch])
 
-            o = Orchestrator(_args(push=True, force=False, path=str(work)), repo_path=str(work))
-            o.repo = str(work)
-            o.subpkg = str(work)
+            o          = Orchestrator(_args(push=True,
+                         force=False, path=str(work)),
+                         repo_path=str(work))
+            o.repo     = str(work)
+            o.subpkg   = str(work)
             o.gitutils = gitutils
             o.resolver = _Resolver()
 
             with redirect_stdout(StringIO()):
                 _, result = o.push()
             self.assertIs(result, utils.StepResult.ABORT)
-        finally:
-            fix.close()
+        finally: fix.close()
 
     def test_push_allows_force_when_remote_is_ahead(self) -> None:
         fix = GitFixture()
         try:
             remote = fix.init_bare()
-            work = fix.init_repo("work")
+            work   = fix.init_repo("work")
             fix.set_identity(work, "pnp-test", "pnp@example.com")
             fix.add_remote(work, "origin", remote)
             (work / "a.txt").write_text("one\n", encoding="utf-8")
@@ -217,8 +216,8 @@ class WorkflowIntegrationTests(unittest.TestCase):
             fix.run(["-C", str(peer), "push", "origin", branch])
 
             o = Orchestrator(_args(push=True, force=True, path=str(work)), repo_path=str(work))
-            o.repo = str(work)
-            o.subpkg = str(work)
+            o.repo     = str(work)
+            o.subpkg   = str(work)
             o.gitutils = gitutils
             o.resolver = _Resolver()
 
@@ -229,5 +228,4 @@ class WorkflowIntegrationTests(unittest.TestCase):
             fix.close()
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

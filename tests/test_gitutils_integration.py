@@ -1,6 +1,4 @@
 """Integration tests for gitutils using local temporary repositories."""
-
-
 from argparse import Namespace
 import unittest
 
@@ -48,7 +46,7 @@ class GitUtilsIntegrationTests(unittest.TestCase):
         fix = GitFixture()
         try:
             remote = fix.init_bare()
-            work = fix.init_repo("work")
+            work   = fix.init_repo("work")
             fix.set_identity(work, "pnp-test", "pnp@example.com")
             fix.add_remote(work, "origin", remote)
             (work / "README.md").write_text("hello\n", encoding="utf-8")
@@ -72,9 +70,7 @@ class GitUtilsIntegrationTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(cp_tag.returncode, 0, cp_tag.stderr)
-        finally:
-            fix.close()
+        finally: fix.close()
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

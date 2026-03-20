@@ -1,6 +1,4 @@
 """Unit tests for gitutils command behavior."""
-
-
 from subprocess import CompletedProcess
 from unittest.mock import patch
 from argparse import Namespace
@@ -414,5 +412,4 @@ class GitUtilsCoreTests(unittest.TestCase):
         self.assertEqual(run_cmd.call_count, 3)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

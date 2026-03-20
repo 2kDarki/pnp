@@ -1,6 +1,4 @@
 """Golden corpus and deterministic snapshot tests for resolver classifier."""
-
-
 from pathlib import Path
 import unittest
 import json
@@ -9,7 +7,7 @@ from pnp import resolver_classifier
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
-GOLDEN = FIXTURES / "resolver_classifier_golden.json"
+GOLDEN   = FIXTURES / "resolver_classifier_golden.json"
 SNAPSHOT = FIXTURES / "resolver_classifier_snapshot_v1.json"
 
 
@@ -24,20 +22,20 @@ class ResolverClassifierGoldenTests(unittest.TestCase):
     def test_golden_corpus_matches_expected_classifications(self) -> None:
         cases = _load_json(GOLDEN)
         for case in cases:
-            name = str(case["name"])
-            stderr = str(case["stderr"])
+            name     = str(case["name"])
+            stderr   = str(case["stderr"])
             expected = case["expected"]
             got = resolver_classifier.classify_stderr(stderr)
             self.assertEqual(got, expected, msg=name)
 
     def test_snapshot_is_stable_and_deterministic(self) -> None:
-        cases = _load_json(GOLDEN)
+        cases             = _load_json(GOLDEN)
         expected_snapshot = _load_json(SNAPSHOT)
 
-        first = []
+        first  = []
         second = []
         for case in cases:
-            name = str(case["name"])
+            name   = str(case["name"])
             stderr = str(case["stderr"])
             first.append(
                 {
@@ -47,7 +45,7 @@ class ResolverClassifierGoldenTests(unittest.TestCase):
             )
         resolver_classifier.reset_telemetry()
         for case in cases:
-            name = str(case["name"])
+            name   = str(case["name"])
             stderr = str(case["stderr"])
             second.append(
                 {
@@ -67,5 +65,4 @@ class ResolverClassifierGoldenTests(unittest.TestCase):
         self.assertEqual(resolver_classifier.rule_conflict_count(), 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

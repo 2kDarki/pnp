@@ -1,9 +1,7 @@
 """Resolver remediation dry-run and structured logging tests."""
-
-
+from subprocess import CompletedProcess
 from contextlib import contextmanager
 from unittest.mock import patch
-from subprocess import CompletedProcess
 from argparse import Namespace
 from pathlib import Path
 import tempfile
@@ -887,5 +885,4 @@ class ResolverRemediationTests(unittest.TestCase):
         self.assertEqual(reason, "")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

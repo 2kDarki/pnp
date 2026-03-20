@@ -1,5 +1,4 @@
 "Main UI for pnp"
-
 # ======================= STANDARDS =======================
 from contextlib import contextmanager
 from collections.abc import Iterator
@@ -29,8 +28,7 @@ class StepStatus(str, Enum):
 
 
 class TUIRunner:
-    def __init__(self, labels: list[str], enabled: bool
-        ) -> None:
+    def __init__(self, labels: list[str], enabled: bool) -> None:
         self.enabled   = enabled
         self.labels    = labels
         self.statuses  = [StepStatus.PENDING] * len(labels)
@@ -120,11 +118,11 @@ class TUIRunner:
         table = Table(show_header=False, box=None,
                 pad_edge=False)
         table.add_column(justify="left")
-    
+
         for i, (label, status) in enumerate(zip(self.labels,
                 self.statuses)):
             step_render = self._row(label, status)
-    
+
             if self._messages[i]:
                 msgs_text = Text()
                 for j, (msg, fg, prfx) in enumerate(
@@ -141,12 +139,11 @@ class TUIRunner:
                 renderable: RenderableType = Group(
                             step_render, msgs_panel)
             else: renderable = step_render
-    
+
             table.add_row(renderable)
-    
+
         return table
-    
-    
+
     def _row(self, label: str, status: StepStatus
             ) -> Text | Spinner:
         if status == StepStatus.RUNNING:

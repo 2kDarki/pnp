@@ -1,6 +1,4 @@
 """Tests for project-type-specific metadata checks in audit."""
-
-
 from pathlib import Path
 import tempfile
 import unittest
@@ -51,5 +49,4 @@ class AuditMetadataTests(unittest.TestCase):
         self.assertIn("cargo workspace manifest detected", detail)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

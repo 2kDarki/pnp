@@ -1,6 +1,4 @@
 """CLI smoke tests for stable user-facing behavior."""
-
-
 from pathlib import Path
 import subprocess
 import tempfile
@@ -45,7 +43,8 @@ class CliSmokeTests(unittest.TestCase):
                 text=True,
                 cwd=tmp,
             )
-            envelope = Path(tmp) / "pnplog" / "last_error_envelope.json"
+            envelope = Path(tmp) / "pnplog" \
+                     / "last_error_envelope.json"
             events = Path(tmp) / "pnplog" / "events.jsonl"
             self.assertTrue(envelope.exists())
             self.assertTrue(events.exists())
@@ -179,7 +178,7 @@ class CliSmokeTests(unittest.TestCase):
                 text=True,
             )
         self.assertEqual(cp.returncode, 0, cp.stderr)
-        end = cp.stdout.rfind("}")
+        end     = cp.stdout.rfind("}")
         payload = json.loads(cp.stdout[:end + 1])
         self.assertEqual(payload["remote"], "upstream")
         self.assertEqual(payload["_sources"]["remote"], "pyproject")
@@ -231,8 +230,8 @@ class CliSmokeTests(unittest.TestCase):
 
     def test_install_and_uninstall_git_extension_shim(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            bin_dir = Path(tmp)
-            shim = bin_dir / "git-pnp"
+            bin_dir    = Path(tmp)
+            shim       = bin_dir / "git-pnp"
             cp_install = subprocess.run(
                 [
                     sys.executable, "-m", "pnp",
@@ -261,7 +260,7 @@ class CliSmokeTests(unittest.TestCase):
 
     def test_install_git_extension_warns_if_dir_not_in_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            env = dict(os.environ)
+            env         = dict(os.environ)
             env["PATH"] = ""
             cp = subprocess.run(
                 [
@@ -279,7 +278,7 @@ class CliSmokeTests(unittest.TestCase):
 
     def test_install_git_extension_no_path_warning_when_dir_in_path(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            env = dict(os.environ)
+            env         = dict(os.environ)
             env["PATH"] = tmp
             cp = subprocess.run(
                 [
@@ -296,5 +295,4 @@ class CliSmokeTests(unittest.TestCase):
         self.assertNotIn("to PATH", cp.stdout)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

@@ -57,7 +57,6 @@ def bind_console(console: MessageSink | None) -> None:
 
 def suspend_console() -> None:
     """Pause active sink when external apps need terminal control."""
-    global _active_console
     current = _active_console
     _console_stack.append(current)
     if current is None: return
@@ -278,7 +277,7 @@ def classify_files(files: list[str]) -> list[str]:
 def gen_commit_message(repo_root: str) -> str:
     message = generate_commit_message(get_diff()) \
            or f"{APP} auto commit — "
-    
+
     if message != f"{APP} auto commit — ": return message
 
     changes = get_changes(repo_root)

@@ -1,6 +1,4 @@
 """Seeded stress tests for fault injection paths and retry timing variance."""
-
-
 from argparse import Namespace
 import unittest
 import random
@@ -104,7 +102,7 @@ class FaultInjectionStressTests(unittest.TestCase):
     def test_seeded_fault_injection_stress(self) -> None:
         seed = int(os.environ.get("PNP_STRESS_SEED", "7"))
         iterations = int(os.environ.get("PNP_STRESS_ITERATIONS", "25"))
-        rng = random.Random(seed)
+        rng   = random.Random(seed)
         steps = list(WORKFLOW_STEP_CODES.keys())
         method_order = [
             "find_repo",
@@ -125,10 +123,11 @@ class FaultInjectionStressTests(unittest.TestCase):
             "release": "release",
         }
         for _ in range(iterations):
-            step = rng.choice(steps)
-            outcome = rng.choice((utils.StepResult.FAIL, utils.StepResult.ABORT))
-            detail = f"seeded fault at {step}"
-            o = Orchestrator(_args(), repo_path=".")
+            step    = rng.choice(steps)
+            outcome = rng.choice((utils.StepResult.FAIL,
+                      utils.StepResult.ABORT))
+            detail  = f"seeded fault at {step}"
+            o       = Orchestrator(_args(), repo_path=".")
             calls: list[str] = []
             _inject_failure(o, step, outcome, detail, calls)
             with self.assertRaises(SystemExit):
@@ -148,16 +147,18 @@ class FaultInjectionStressTests(unittest.TestCase):
             "jitter_s": 0.10,
         }
         random.seed(seed)
-        first = [gitutils._retry_delay_seconds(tries=1, policy=policy) for _ in range(runs)]
+        first = [gitutils._retry_delay_seconds(tries=1,
+                policy=policy) for _ in range(runs)]
         random.seed(seed)
-        second = [gitutils._retry_delay_seconds(tries=1, policy=policy) for _ in range(runs)]
+        second = [gitutils._retry_delay_seconds(tries=1,
+                 policy=policy) for _ in range(runs)]
         self.assertEqual(first, second)
         self.assertTrue(any(first[i] != first[i - 1] for i in range(1, len(first))))
-        base = min(policy["base_delay_s"] * (2 ** 1), policy["max_delay_s"])
-        low = base
+        base = min(policy["base_delay_s"] * (2 ** 1),
+               policy["max_delay_s"])
+        low  = base
         high = base + policy["jitter_s"]
         self.assertTrue(all(low <= d <= high for d in first))
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

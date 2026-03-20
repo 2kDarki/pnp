@@ -4,14 +4,11 @@ AI-powered git commit message generator via OpenRouter.
 Environment:
     OPENROUTER_API_KEY  — required
 """
-
-from typing import Optional
-import subprocess
 import logging
+import json
 import os
 
 import requests
-import json
 
 
 MODELS = [
@@ -27,7 +24,7 @@ MODELS = [
     "stepfun/step-3.5-flash:free",
 ]
 
-API_BASE_URL    = f"https://openrouter.ai/api/v1"
+API_BASE_URL    = "https://openrouter.ai/api/v1"
 API_KEY_ENV     = "OPENROUTER_API_KEY"
 MAX_DIFF_CHARS  = 100000
 MAX_TOKENS      = 10000
@@ -100,6 +97,7 @@ USER_PROMPT = (
 
 logger = logging.getLogger(__name__)
 
+
 def _trim_diff(diff: str) -> str:
     """
     Truncate diff to MAX_DIFF_CHARS.
@@ -110,7 +108,7 @@ def _trim_diff(diff: str) -> str:
          + "\n\n[diff truncated for length]"
 
 
-def _get_api_key() -> Optional[str]:
+def _get_api_key() -> str | None:
     key = os.environ.get(API_KEY_ENV)
     if not key:
         logger.error(
@@ -119,7 +117,7 @@ def _get_api_key() -> Optional[str]:
     return key
 
 
-def _call_openrouter(diff: str) -> Optional[str]:
+def _call_openrouter(diff: str) -> str | None:
     """
     Call OpenRouter via httpx and return the raw response
     text. Reasoning is disabled — llm will just burn all
@@ -130,7 +128,7 @@ def _call_openrouter(diff: str) -> Optional[str]:
     """
     api_key = _get_api_key()
     if not api_key: return None
-    
+
     status = 0
     for model in MODELS:
         midx    = MODELS.index(model) + 1
@@ -170,11 +168,11 @@ def _call_openrouter(diff: str) -> Optional[str]:
                 return None
 
             return content.strip()
-    
+
         except requests.exceptions.Timeout:
             logger.warning("OpenRouter request timed out after %ss.", TIMEOUT_SECONDS)
         except requests.exceptions.HTTPError as e:
-            status = e.response.status_code if e.response is not None else "?"
+            status = e.response.status_code if e.response is not None else -1
             logger.warning("OpenRouter HTTP error %s: %s", status, e)
             if status == 429:
                 logger.warning("Rate limit hit — free tier is 20 RPM / 200 RPD.")
@@ -182,14 +180,16 @@ def _call_openrouter(diff: str) -> Optional[str]:
             logger.warning("OpenRouter connection failed: %s", e)
         except (KeyError, IndexError) as e:
             logger.warning("Unexpected OpenRouter response shape: %s", e)
-    
+
         finally:
             if content: return content
             print(f"Model ({midx}/{len(MODELS)}): {model}\n")
             if status == 429: continue
+    
+    return None
 
 
-def generate_commit_message(diff: str) -> Optional[str]:
+def generate_commit_message(diff: str) -> str | None:
     """
     Generate a conventional commit message from a git diff
     string.

@@ -1,8 +1,5 @@
 """Tests for layered config precedence (default < pyproject < git < env < cli)."""
-
-
 from unittest.mock import patch
-
 from pathlib import Path
 import tempfile
 import unittest
@@ -46,7 +43,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_env_overrides_git(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({"remote": "pyproj"}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -58,7 +55,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_cli_overrides_env(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args(["--remote", "fork"])
+        args   = parser.parse_args(["--remote", "fork"])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({"remote": "pyproj"}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -74,7 +71,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_invalid_bool_is_ignored(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -118,7 +115,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_machete_flag_can_come_from_env(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -129,7 +126,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_check_only_can_come_from_env(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -140,7 +137,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_check_json_can_come_from_env(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -151,7 +148,7 @@ class ConfigLayeringTests(unittest.TestCase):
 
     def test_strict_can_come_from_env(self) -> None:
         parser = _build_parser()
-        args = parser.parse_args([])
+        args   = parser.parse_args([])
         with patch("pnp.config._load_pyproject_overrides",
                    return_value=({}, [], None)):
             with patch("pnp.config._load_git_overrides",
@@ -196,5 +193,4 @@ class ConfigLayeringTests(unittest.TestCase):
         self.assertEqual(adapter_cfg["node"]["build-script"], "build")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

@@ -1,6 +1,4 @@
 """Tests for rollback verification helpers in ops."""
-
-
 from subprocess import CompletedProcess
 from unittest.mock import Mock, patch
 import unittest
@@ -20,7 +18,7 @@ class OpsRollbackTests(unittest.TestCase):
         self.assertTrue(any("rollback verified" in c for c in calls))
 
     def test_rollback_unstage_verification_failure(self) -> None:
-        out = Mock()
+        out      = Mock()
         reset_ok = CompletedProcess(args=["git", "reset"], returncode=0, stdout="", stderr="")
         verify_bad = CompletedProcess(args=["git", "diff"], returncode=0, stdout="a.py\n", stderr="")
         with patch("pnp.ops.subprocess.run", side_effect=[reset_ok, verify_bad]):
@@ -29,7 +27,7 @@ class OpsRollbackTests(unittest.TestCase):
         self.assertTrue(any("verification failed" in c for c in calls))
 
     def test_rollback_delete_tag_verification_success(self) -> None:
-        out = Mock()
+        out    = Mock()
         del_ok = CompletedProcess(args=["git", "tag", "-d", "v1"], returncode=0, stdout="", stderr="")
         verify_ok = CompletedProcess(args=["git", "tag", "--list", "v1"], returncode=0, stdout="", stderr="")
         with patch("pnp.ops.subprocess.run", side_effect=[del_ok, verify_ok]):
@@ -39,5 +37,4 @@ class OpsRollbackTests(unittest.TestCase):
         self.assertTrue(any("rollback verified" in c for c in calls))
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

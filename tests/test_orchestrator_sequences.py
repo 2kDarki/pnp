@@ -1,6 +1,4 @@
 """Sequence tests for orchestrator non-happy control-flow chains."""
-
-
 from argparse import Namespace
 import unittest
 
@@ -130,5 +128,4 @@ class OrchestratorSequenceTests(unittest.TestCase):
         self.assertEqual(o.failure_hint.code, "PNP_NET_PUSH_FAIL")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

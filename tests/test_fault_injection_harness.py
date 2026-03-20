@@ -1,6 +1,4 @@
 """Fault injection harness for step-level workflow failure policies."""
-
-
 from argparse import Namespace
 import unittest
 
@@ -105,8 +103,7 @@ def _inject_failure(
 
     if outcome is utils.StepResult.ABORT:
         payload: str | tuple[str, bool] = (detail, False)
-    else:
-        payload = detail
+    else: payload = detail
 
     def _fail(step_idx: int | None = None) -> tuple[str | tuple[str, bool], utils.StepResult]:
         calls.append(failing_method)
@@ -126,7 +123,7 @@ class FaultInjectionHarnessTests(unittest.TestCase):
             ("publish", utils.StepResult.ABORT, "tag conflict: already exists on remote"),
             ("release", utils.StepResult.FAIL, "release conflict: GitHub API rejected tag"),
         ]
-        expected_codes = WORKFLOW_STEP_CODES.copy()
+        expected_codes  = WORKFLOW_STEP_CODES.copy()
         expected_result = {
             utils.StepResult.FAIL: "fail",
             utils.StepResult.ABORT: "abort",
@@ -176,5 +173,4 @@ class FaultInjectionHarnessTests(unittest.TestCase):
                 self.assertEqual(envelope["schema_version"], 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

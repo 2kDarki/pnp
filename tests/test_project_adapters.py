@@ -1,5 +1,4 @@
 """Tests for project adapter detection and resolution."""
-
 from pathlib import Path
 import tempfile
 import unittest
@@ -134,5 +133,4 @@ class ProjectAdapterTests(unittest.TestCase):
             )
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

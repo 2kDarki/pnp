@@ -1,6 +1,4 @@
 """Tests for runtime error-envelope code mapping."""
-
-
 from argparse import Namespace
 import unittest
 
@@ -156,5 +154,4 @@ class RuntimeErrorEnvelopeTests(unittest.TestCase):
         self.assertEqual(payload["step"], "publish")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

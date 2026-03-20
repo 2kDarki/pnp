@@ -1,6 +1,4 @@
 """Editor resolution matrix tests for shell/environment combinations."""
-
-
 from unittest.mock import patch
 import unittest
 
@@ -73,5 +71,4 @@ class OpsEditorMatrixTests(unittest.TestCase):
                         ops.resolve_editor_command(None, repo=".")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

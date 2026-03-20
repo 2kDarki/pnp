@@ -8,7 +8,6 @@ import shlex
 import time
 import json
 import os
-import re
 
 from . import _constants as const
 from . import telemetry
@@ -62,7 +61,7 @@ def run_machete(repo: str, dry_run: bool,
         utils.suspend_console()
         try: cp = run_command(cmd, cwd=repo)
         finally: utils.resume_console()
-    
+
         if cp.returncode != 0:
             detail = cp.stderr.strip() or cp.stdout.strip() \
                   or f"git machete {label} failed"
@@ -139,7 +138,7 @@ def manage_git_extension_install(out: utils.Output,
             return [
                 (bin_dir / "git-pnp.cmd",
                 "@echo off\r\npython -m pnp %*\r\n", None),
-                (bin_dir / "git-pnp", 
+                (bin_dir / "git-pnp",
                 "#!/usr/bin/env sh\nexec python -m "
                 "pnp \"$@\"\n", 0o755),
             ]

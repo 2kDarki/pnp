@@ -1,6 +1,4 @@
 """Regression tests for core pnp hardening fixes."""
-
-
 from contextlib import redirect_stdout
 from unittest.mock import patch
 from argparse import Namespace
@@ -363,8 +361,8 @@ class Phase1RegressionTests(unittest.TestCase):
         args = make_args(interactive=False, ci=False, quiet=False, plain=False,
                          edit_message=True, dry_run=False)
         const.sync_runtime_flags(args)
-        o = Orchestrator(args, repo_path=".")
-        o.subpkg = "."
+        o          = Orchestrator(args, repo_path=".")
+        o.subpkg   = "."
         o.gitutils = _CommitDummyGit()
         o.resolver = type("R", (), {"normalize_stderr": staticmethod(str)})()
 
@@ -384,5 +382,4 @@ class Phase1RegressionTests(unittest.TestCase):
         self.assertEqual(called["n"], 1)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

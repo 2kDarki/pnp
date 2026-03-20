@@ -1,6 +1,4 @@
 """Tests for error-code contract compatibility gate."""
-
-
 import unittest
 
 from tools import error_code_gate
@@ -11,7 +9,7 @@ class ErrorCodeGateTests(unittest.TestCase):
         lock = error_code_gate.json.loads(
             error_code_gate.LOCK_FILE.read_text(encoding="utf-8")
         )
-        curr = error_code_gate.current_contract()
+        curr      = error_code_gate.current_contract()
         issues, _ = error_code_gate.compare_contracts(lock, curr)
         self.assertEqual(issues, [])
 
@@ -49,5 +47,4 @@ class ErrorCodeGateTests(unittest.TestCase):
         self.assertTrue(any("new stable error code added" in n for n in notes))
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

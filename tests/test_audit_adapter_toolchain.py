@@ -1,7 +1,6 @@
 """Unit tests for adapter-aware doctor toolchain checks."""
-
-from pathlib import Path
 from unittest.mock import patch
+from pathlib import Path
 import tempfile
 import unittest
 
@@ -61,5 +60,4 @@ class AuditAdapterToolchainTests(unittest.TestCase):
         self.assertIn("rust: toolchain ready (cargo)", detail)
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

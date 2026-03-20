@@ -1,6 +1,4 @@
 """Tests for SLO report metric computation."""
-
-
 from pathlib import Path
 import tempfile
 import unittest
@@ -117,5 +115,4 @@ class SloReportTests(unittest.TestCase):
             self.assertTrue(report_path.exists())
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

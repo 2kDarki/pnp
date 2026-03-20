@@ -160,7 +160,8 @@ def _load_pyproject_overrides(path: str
 
 
 def _load_pyproject_adapter_tables(path: str
-    ) -> tuple[dict[str, dict[str, object]], list[dict[str, str]], str | None]:
+        ) -> tuple[dict[str, dict[str, object]],
+             list[dict[str, str]], str | None]:
     pyproject = _find_pyproject(path)
     if pyproject is None: return {}, [], None
     try:

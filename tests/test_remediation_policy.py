@@ -1,6 +1,4 @@
 """Tests for remediation policy matrix behavior."""
-
-
 import unittest
 
 from pnp.remediation_policy import can_run_remediation
@@ -164,5 +162,4 @@ class RemediationPolicyTests(unittest.TestCase):
         self.assertEqual(reason, "")
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

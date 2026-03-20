@@ -1,6 +1,4 @@
 """Integration-style tests for GitHub API helpers using a local mock server."""
-
-
 from http.server import BaseHTTPRequestHandler
 from http.server import ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -54,14 +52,15 @@ class _Handler(BaseHTTPRequestHandler):
 
 class GithubIntegrationTests(unittest.TestCase):
     def test_create_release_and_upload_asset(self) -> None:
-        server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
+        server     = ThreadingHTTPServer(("127.0.0.1", 0),
+                     _Handler)
         host, port = server.server_address
-        base = f"http://{host}:{port}"
+        base       = f"http://{host}:{port}"
         t = Thread(target=server.serve_forever, daemon=True)
         t.start()
-        old_api = github.API
-        old_uploads = github.UPLOADS_API
-        github.API = base
+        old_api            = github.API
+        old_uploads        = github.UPLOADS_API
+        github.API         = base
         github.UPLOADS_API = base
         try:
             resp = github.create_release(
@@ -93,11 +92,10 @@ class GithubIntegrationTests(unittest.TestCase):
             self.assertEqual(_Handler.upload_name, "asset.bin")
             self.assertEqual(_Handler.upload_payload, b"abc")
         finally:
-            github.API = old_api
+            github.API         = old_api
             github.UPLOADS_API = old_uploads
             server.shutdown()
             server.server_close()
 
 
-if __name__ == "__main__":
-    unittest.main()
+if __name__ == "__main__": unittest.main()

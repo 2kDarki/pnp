@@ -39,10 +39,11 @@ from . import _constants as const
 from .utils import get_shell
 from . import telemetry
 
-
 # Configure module logger
 logger = log.getLogger("pnp.resolver")
 logger.setLevel(log.DEBUG)
+
+
 def configure_logger(log_dir: Path) -> None:
     """Configure resolver logger once per process."""
     telemetry.init_event_stream(Path(log_dir))
@@ -258,6 +259,7 @@ class Handlers:
         """Dispatch and return a typed policy decision."""
         cls             = self.classify(stderr)
         self.last_error = cls.as_dict()
+
         def _on_unhandled() -> None:
             print()
             logger.warning("Unhandled git stderr pattern. "
@@ -1259,7 +1261,7 @@ class Handlers:
                 )
                 return StepResult.FAIL
             cp_remote = _run(["git", "remote"], cwd)
-            remotes   = [r.strip() for r in 
+            remotes   = [r.strip() for r in
                         (cp_remote.stdout or ""
                         ).splitlines() if r.strip()]
             remote = remotes[0] if remotes else "origin"
