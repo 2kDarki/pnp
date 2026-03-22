@@ -29,9 +29,8 @@ ALLOWED_OPTIONS = {
                 "--show-config", "--doctor-json",
                 "--doctor-report",
                 "--debug-report", "--debug-report-file",
-                "--install-git-ext", "--uninstall-git-ext",
-                "--git-ext-dir", "--status", "-s",
-                "--sync", "-S", "--traverse", "-t"],
+                "--status", "-s", "--sync", "-S",
+                "--traverse", "-t"],
      "github": ["--gh-release", "--gh-repo",
                 "--gh-token", "--gh-draft",
                 "--gh-prerelease", "--gh-assets"],
@@ -91,7 +90,6 @@ def help_msg(found: bool = False,
     print(wrap("pnp . --check-only --check-json", 8, 4))
     print(wrap("pnp --doctor --doctor-json", 8, 4))
     print(wrap("pnp --show-config", 8, 4))
-    print(wrap("pnp --install-git-ext", 8, 4))
     print(wrap("pnp . --push --publish --sync", 8, 4))
 
     # Section 2: Options & Commands
@@ -246,13 +244,6 @@ def print_help(section: int = 0) -> None:
                        + "effective runtime configuration "
                        + "after applying defaults, pyproject"
                        + ", git config, env, and CLI")}
-    Install extension  {desc("--install-git-ext to install "
-                       + "a git-pnp shim for `git pnp`")}
-    Remove extension   {desc("--uninstall-git-ext to remove "
-                       + "the installed git-pnp shim")}
-    Extension dir      {desc("--git-ext-dir PATH to set "
-                       + "where the git-pnp shim is "
-                       + "installed")}
     Machete status     {desc("-s / --status to run `git "
                        + "machete status` and fail on"
                        + "issues")}

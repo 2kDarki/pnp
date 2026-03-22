@@ -32,7 +32,6 @@ import os
 # ======================== LOCALS =========================
 from .error_model import FailureEvent, build_error_envelope
 from .project_adapters import SUPPORTED_PROJECT_TYPES
-from .ops import manage_git_extension_install
 from .error_model import resolve_failure_code
 from .audit import run_doctor, run_check_only
 from .debug_report import build_debug_report
@@ -261,9 +260,6 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--check-json", action="store_true")
     p.add_argument("--strict", action="store_true")
     p.add_argument("--show-config", action="store_true")
-    p.add_argument("--install-git-ext", action="store_true")
-    p.add_argument("--uninstall-git-ext", action="store_true")
-    p.add_argument("--git-ext-dir", default=None)
     p.add_argument("--status", "-s", dest="machete_status",
                    action="store_true")
     p.add_argument("--sync", "-S", dest="machete_sync",
@@ -360,26 +356,11 @@ def main() -> None:
     last_error: BaseException | None = None
     last_failure_hint: FailureEvent | None = None
     try:
-        if args.install_git_ext and args.uninstall_git_ext:
-            out.warn("choose only one: "
-                "--install-git-ext or --uninstall-git-ext")
-            code = 1
-            return None
         if args.show_config:
             code = show_effective_config(args, out)
             return None
         if args.check_only or args.check_json:
             code = run_check_only(args, out)
-            return None
-        if args.install_git_ext:
-            code = manage_git_extension_install(out,
-                   uninstall=False,
-                   target_dir=args.git_ext_dir)
-            return None
-        if args.uninstall_git_ext:
-            code = manage_git_extension_install(out,
-                   uninstall=True,
-                   target_dir=args.git_ext_dir)
             return None
         if args.doctor:
             code = run_doctor(args.path, out,

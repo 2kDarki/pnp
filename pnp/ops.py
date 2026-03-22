@@ -114,68 +114,6 @@ def run_hook(cmd: str, cwd: str, dryrun: bool,
     return code
 
 
-def manage_git_extension_install(out: utils.Output,
-                                 uninstall: bool = False,
-                                 target_dir: str | None = None) -> int:
-    """Install or remove a `git-pnp` shim for `git pnp` usage."""
-    def in_path(dir_path: Path) -> bool:
-        raw_path = os.environ.get("PATH", "")
-        norm_target = os.path.normcase(str(dir_path.resolve()))
-        for segment in raw_path.split(os.pathsep):
-            if not segment.strip(): continue
-            try:
-                norm_segment = os.path.normcase(str(Path(segment).expanduser().resolve()))
-            except OSError: continue
-            if norm_segment == norm_target: return True
-        return False
-
-    home    = Path.home()
-    bin_dir = Path(target_dir).expanduser() if target_dir \
-         else (home / ".local" / "bin")
-
-    def shim_specs() -> list[tuple[Path, str, int | None]]:
-        if os.name == "nt":
-            return [
-                (bin_dir / "git-pnp.cmd",
-                "@echo off\r\npython -m pnp %*\r\n", None),
-                (bin_dir / "git-pnp",
-                "#!/usr/bin/env sh\nexec python -m "
-                "pnp \"$@\"\n", 0o755),
-            ]
-        return [
-            (bin_dir / "git-pnp", "#!/usr/bin/env sh\nexec "
-            "python -m pnp \"$@\"\n", 0o755),
-        ]
-
-    scripts = shim_specs()
-    if uninstall:
-        removed = 0
-        for script, _, _ in scripts:
-            if script.exists():
-                script.unlink()
-                removed += 1
-                out.success(f"removed git extension shim: {utils.pathit(str(script))}")
-        if removed == 0:
-            out.warn(f"no shim found at {utils.pathit(str(bin_dir))}")
-        else:
-            out.success(f"removed {removed} shim(s) from {utils.pathit(str(bin_dir))}")
-        return 0
-
-    try:
-        bin_dir.mkdir(parents=True, exist_ok=True)
-        for script, content, mode in scripts:
-            script.write_text(content, encoding="utf-8")
-            if mode is not None: script.chmod(mode)
-    except Exception as e:
-        out.warn(f"failed to install git extension shim: {e}")
-        return 1
-
-    out.success(f"installed git extension shim(s) in: {utils.pathit(str(bin_dir))}")
-    if not in_path(bin_dir):
-        out.warn(f"add {utils.pathit(str(bin_dir))} to PATH to enable `git pnp`")
-    return 0
-
-
 def show_effective_config(args: argparse.Namespace,
                           out: utils.Output) -> int:
     """Print the effective merged runtime configuration."""
