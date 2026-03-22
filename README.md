@@ -160,49 +160,6 @@ pnp --doctor --doctor-report pnplog/doctor.json
 pnp --show-config
 ```
 
-### Install git extension shim
-
-```bash
-pnp --install-git-ext
-```
-
-Optional custom install directory:
-```bash
-pnp --install-git-ext --git-ext-dir ~/bin
-```
-
-PATH setup examples:
-
-- Bash/Zsh (Linux/macOS):
-  ```bash
-  echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-  # or ~/.zshrc
-  ```
-
-- Fish (Linux/macOS):
-  ```fish
-  fish_add_path $HOME/.local/bin
-  ```
-
-- PowerShell (Windows):
-  ```powershell
-  [Environment]::SetEnvironmentVariable(
-    "Path",
-    "$HOME\.local\bin;" + $env:Path,
-    "User"
-  )
-  ```
-
-- CMD (Windows):
-  ```bat
-  setx PATH "%USERPROFILE%\.local\bin;%PATH%"
-  ```
-
-After updating PATH, start a new shell and verify:
-```bash
-git pnp --version
-```
-
 ---
 
 ## Command-line Options
@@ -242,12 +199,6 @@ JSON schema contracts:
 - CI gate script: `tools/schema_gate.py`
 
 - `--show-config`: Print effective merged runtime configuration
-
-- `--install-git-ext`: Install `git-pnp` shim (enables `git pnp`)
-
-- `--uninstall-git-ext`: Remove installed `git-pnp` shim
-
-- `--git-ext-dir`: Directory for extension shim install/remove
 
 - `--status`: Run `git machete status` before workflow mutating steps
 
