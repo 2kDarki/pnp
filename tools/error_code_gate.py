@@ -104,25 +104,22 @@ def compare_contracts(lock: dict[str, Any], curr: dict[str, Any]) -> tuple[list[
 
 def _override_active() -> bool:
     token = os.environ.get("PNP_ALLOW_ERROR_CODE_BREAK", "").strip().lower()
-    if token in {"1", "true", "yes"}:
-        return True
+    if token in {"1", "true", "yes"}: return True
     return APPROVAL_FILE.exists()
 
 
 def main() -> int:
-    lock = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
-    curr = current_contract()
+    lock          = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
+    curr          = current_contract()
     issues, notes = compare_contracts(lock, curr)
-    approved = _override_active()
+    approved      = _override_active()
 
     if issues and not approved:
         print("Error code gate failed:")
-        for item in issues:
-            print(f" - {item}")
+        for item in issues: print(f" - {item}")
         if notes:
             print("Non-breaking additions detected:")
-            for item in notes:
-                print(f" - {item}")
+            for item in notes: print(f" - {item}")
         print("Breaking changes require migration notes using docs/ERROR_CODE_MIGRATION_TEMPLATE.md")
         print(
             "Set PNP_ALLOW_ERROR_CODE_BREAK=1 or add "
@@ -132,17 +129,14 @@ def main() -> int:
 
     if issues and approved:
         print("Error code gate override active; continuing despite breaking changes:")
-        for item in issues:
-            print(f" - {item}")
+        for item in issues: print(f" - {item}")
         return 0
 
     print("Error code gate passed.")
     if notes:
         print("Detected additions:")
-        for item in notes:
-            print(f" - {item}")
+        for item in notes: print(f" - {item}")
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())
