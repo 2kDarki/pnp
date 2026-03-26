@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """CI gate for JSON schema contract compatibility."""
-
-
 from pathlib import Path
 import subprocess
 import json

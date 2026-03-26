@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Compute SLO metrics from pnplog events stream."""
-
-
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -10,29 +8,22 @@ import json
 
 
 def _parse_ts(ts: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except Exception:
-        return None
+    try: return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception: return None
 
 
 def _load_events(path: Path) -> list[dict[str, Any]]:
-    if not path.exists():
-        return []
+    if not path.exists(): return []
     rows: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines():
-        try:
-            obj = json.loads(line)
-        except Exception:
-            continue
-        if isinstance(obj, dict):
-            rows.append(obj)
+        try: obj = json.loads(line)
+        except Exception: continue
+        if isinstance(obj, dict): rows.append(obj)
     return rows
 
 
 def _rate(ok: int, total: int) -> float | None:
-    if total <= 0:
-        return None
+    if total <= 0: return None
     return ok / total
 
 
@@ -41,21 +32,17 @@ def compute_slos(events: list[dict[str, Any]]) -> dict[str, Any]:
     unknown = 0
     for e in resolver:
         payload = e.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
+        if not isinstance(payload, dict): continue
         code = str(payload.get("code", "")).strip()
-        if code == "PNP_GIT_UNCLASSIFIED":
-            unknown += 1
+        if code == "PNP_GIT_UNCLASSIFIED": unknown += 1
     unknown_rate = _rate(unknown, len(resolver))
 
     runs: dict[str, dict[str, datetime]] = {}
     for e in events:
         run_id = str(e.get("run_id", "")).strip()
-        if not run_id:
-            continue
+        if not run_id: continue
         ts = _parse_ts(str(e.get("ts", "")))
-        if ts is None:
-            continue
+        if ts is None: continue
         event_type = str(e.get("event_type", "")).strip()
         bucket = runs.setdefault(run_id, {})
         if event_type == "error_signal":
@@ -68,43 +55,35 @@ def compute_slos(events: list[dict[str, Any]]) -> dict[str, Any]:
     for sample in runs.values():
         start = sample.get("error_signal")
         done = sample.get("actionable_diagnosis")
-        if start is None or done is None:
-            continue
+        if start is None or done is None: continue
         delta = (done - start).total_seconds()
-        if delta >= 0:
-            diagnosis_samples.append(delta)
+        if delta >= 0: diagnosis_samples.append(delta)
     mean_diagnosis = None
     if diagnosis_samples:
         mean_diagnosis = sum(diagnosis_samples) / len(diagnosis_samples)
 
     remediation = [e for e in events if e.get("event_type") == "remediation"]
     rem_success = 0
-    rem_total = 0
+    rem_total   = 0
     for e in remediation:
         payload = e.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
+        if not isinstance(payload, dict): continue
         outcome = str(payload.get("outcome", "")).strip()
-        if outcome not in {"success", "failed"}:
-            continue
+        if outcome not in {"success", "failed"}: continue
         rem_total += 1
-        if outcome == "success":
-            rem_success += 1
+        if outcome == "success": rem_success += 1
     remediation_rate = _rate(rem_success, rem_total)
 
     rollback = [e for e in events if e.get("event_type") == "rollback_verification"]
     rb_success = 0
-    rb_total = 0
+    rb_total   = 0
     for e in rollback:
         payload = e.get("payload", {})
-        if not isinstance(payload, dict):
-            continue
+        if not isinstance(payload, dict): continue
         verified = payload.get("verified")
-        if not isinstance(verified, bool):
-            continue
+        if not isinstance(verified, bool): continue
         rb_total += 1
-        if verified:
-            rb_success += 1
+        if verified: rb_success += 1
     rollback_rate = _rate(rb_success, rb_total)
 
     return {
@@ -131,8 +110,7 @@ def compute_slos(events: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _breach(name: str, value: float | None, threshold: float, kind: str) -> str | None:
-    if value is None:
-        return None
+    if value is None: return None
     if kind == "max" and value > threshold:
         return f"{name}={value:.4f} exceeds max {threshold:.4f}"
     if kind == "min" and value < threshold:
@@ -199,14 +177,10 @@ def main() -> int:
     found = [b for b in breaches if b]
     if found:
         print("SLO threshold breaches:")
-        for b in found:
-            print(f" - {b}")
-        if args.fail_on_thresholds:
-            return 1
-    else:
-        print("SLO thresholds satisfied.")
+        for b in found: print(f" - {b}")
+        if args.fail_on_thresholds: return 1
+    else: print("SLO thresholds satisfied.")
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())

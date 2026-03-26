@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
 """Run seeded stress tests repeatedly and enforce flake-rate threshold."""
-
-
 from datetime import UTC, datetime
 from pathlib import Path
 import subprocess
@@ -41,8 +39,7 @@ def _run_once(seed: int, retries: int, timeout_s: int) -> tuple[bool, str]:
             text=True,
             timeout=timeout_s,
         )
-    except subprocess.TimeoutExpired:
-        return False, "timeout"
+    except subprocess.TimeoutExpired: return False, "timeout"
     out = (cp.stdout or cp.stderr or "").strip()
     return cp.returncode == 0, out
 
@@ -88,7 +85,7 @@ def main() -> int:
         else:
             print(f"[ok] run={i + 1} seed={seed} summary={samples[-1]['summary']}")
 
-    rate = failures / args.runs
+    rate    = failures / args.runs
     payload = {
         "schema": "pnp.stress_flake.v1",
         "schema_version": 1,
@@ -112,5 +109,4 @@ def main() -> int:
     return 0
 
 
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__ == "__main__": raise SystemExit(main())
