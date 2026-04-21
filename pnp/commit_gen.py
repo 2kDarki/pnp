@@ -19,7 +19,7 @@ MODELS = [
     "liquid/lfm-2.5-1.2b-instruct:free",
     "openrouter/hunter-alpha",
     "openrouter/healer-alpha",
-    "nvidia/nemotron-3-super-120b-a12b:free",
+    "nvidia/nempotron-3-super-120b-a12b:free",
     "nvidia/nemotron-3-nano-30b-a3b:free",
     "stepfun/step-3.5-flash:free",
 ]
@@ -32,17 +32,17 @@ TEMPERATURE     = 0.2
 TIMEOUT_SECONDS = 15
 
 SYSTEM_PROMPT = (
-    "You are a git commit message generator. You write "
+    "You are a git commit message generator. You rwrite "
     "commit messages in the style of a senior engineer: "
-    "technical, dense, imperative mood, zero filler.\n"
-    "\n"
+    "technical, dense, imperative mood, zero filler.\n\n"
+
     "Output ONLY the commit message — no explanation, no "
     "markdown, no code fences."
 )
 
 USER_PROMPT = (
-    "Generate a git commit message for the diff below.\n"
-    "\n"
+    "Generate a git commit message for the diff below.\n\n"
+
     "Follow this exact format:\n"
     "  type(scope): headline\n"
     "  <blank line>\n"
@@ -54,44 +54,72 @@ USER_PROMPT = (
     "    - Bullet point\n\n"
 
     "RULES:\n"
-    "- Output ONLY the commit message. No explanation, no markdown, no code fences.\n"
-    "- Subject line: type(scope): headline — always include scope, 72 chars max.\n"
-    "- There MUST be a blank line between the subject and the body.\n"
-    "- Scope: derive from the primary subsystem, module, or directory changed. Never omit it.\n"
-    "- Headline: punchy, captures the dominant theme — not a list of everything changed.\n"
-    "- Body: group related changes under plain-text section headers followed by a colon.\n"
-    "- Each section header is a noun phrase describing the concern (e.g. 'Core changes:', 'Test coverage:').\n"
-    "- Bullets are tight and technical. Use past tense for additions ('Added X'), imperative for directives.\n"
-    "- Split into multiple sections when changes span distinct concerns (e.g. new feature vs. integration wiring vs. tests).\n"
-    "- Housekeeping: ANY minor/incidental change (formatting, imports, whitespace, comments, indentation, blank lines) anywhere in the diff must be collapsed into ONE bullet: 'Minor formatting and import cleanup.' Never enumerate them individually, and never let them appear in substantive sections — move them to a Housekeeping section at the end.\n"
-    "- Only include a body if there are multiple logical groups. Single-concern diffs: subject line only.\n"
-    "- Do NOT pad. Do NOT summarize what is already obvious from the subject.\n"
-    "- Valid types: feat, fix, refactor, chore, docs, test, style, perf\n\n"
+    "- Output ONLY the commit message. No explanation, no"
+   	 " markdown, no code fences.\n"
+    "- Subject line: type(scope): headline — always include"
+     " scope, 72 chars max.\n"
+    "- There MUST be a blank line between the subject and the"
+     " body.\n"
+    "- Scope: derive from the primary subsystem, module, or"
+     " directory changed. Never omit it.\n"
+    "- Headline: punchy, captures the dominant theme — not a"
+     " list of everything changed.\n"
+    "- Body: group related changes under plain-text section"
+     " headers followed by a colon.\n"
+    "- Each section header is a noun phrase describing the"
+     " concern (e.g. 'Core changes:', 'Test coverage:').\n"
+    "- Bullets are tight and technical. Use past tense for"
+     " additions ('Added X'), imperative for directives.\n"
+    "- Split into multiple sections when changes span distinct"
+     " concerns (e.g. new feature vs. integration wiring vs."
+     " tests).\n"
+    "- Housekeeping: ANY minor/incidental change (formatting,"
+     " imports, whitespace, comments, indentation, blank lines)"
+     " anywhere in the diff must be collapsed into ONE bullet:"
+     " 'Minor formatting and import cleanup.' Never enumerate"
+     " them individually, and never let them appear in"
+     " substantive sections — move them to a Housekeeping"
+     " section at the end.\n"
+    "- Only include a body if there are multiple logical groups."
+     " Single-concern diffs: subject line only.\n"
+    "- Do NOT pad. Do NOT summarize what is already obvious from"
+     " the subject.\n"
+    "- Valid types: feat, fix, refactor, chore, docs, test,"
+     " style, perf\n\n"
 
     "EXAMPLE OUTPUT:\n"
-    "feat(resolver): expand autopilot remediation coverage\n"
-    "\n"
+    "feat(resolver): expand autopilot remediation coverage\n\n"
+
     "Core resolver expansion:\n"
-    "  - Added classification and handler paths for line-ending normalization and large-file rejection\n"
-    "  - Added protected-branch and detached HEAD resolution paths\n"
-    "\n"
+    "  - Added classification and handler paths for line-ending"
+       " normalization and large-file rejection\n"
+    "  - Added protected-branch and detached HEAD resolution"
+       " paths\n\n"
+
     "Policy changes:\n"
-    "  - Wired create_gitattributes and renormalize_line_endings remediation actions\n"
-    "  - Destructive paths remain policy-gated and disabled in auto-fix\n"
-    "\n"
+    "  - Wired create_gitattributes and renormalize_line_endings"
+       " remediation actions\n"
+    "  - Destructive paths remain policy-gated and disabled in"
+       " auto-fix\n\n"
+
     "Housekeeping:\n"
-    "  - Minor formatting and import cleanup\n"
-    "\n"
+    "  - Minor formatting and import cleanup\n\n"
+
     "WRONG — do NOT produce output like this:\n"
-    "feat(pnp): add things\n"
-    "\n"
+    "feat(pnp): add things\n\n"
+
     "Core changes:\n"
     "  - Added feature X\n"
     "  - Added feature Y\n"
-    "  - Minor formatting and import cleanup\n"
-    "\n"
-    "Wrong because: (1) housekeeping bullet is inside a substantive section instead of its own Housekeeping section, "
-    "(2) all changes collapsed into one generic section instead of split by concern.\n\n"
+    "  - Minor formatting and import cleanup\n\n"
+
+    "Wrong because: "
+    "(1) housekeeping bullet is inside a"
+       " substantive section instead of its own Housekeeping"
+       " section, "
+    "(2) all changes collapsed into one generic section instead"
+       " of split by concern.\n\n"
+
     "Diff:\n\n"
 )
 
@@ -120,7 +148,7 @@ def _get_api_key() -> str | None:
 def _call_openrouter(diff: str) -> str | None:
     """
     Call OpenRouter via httpx and return the raw response
-    text. Reasoning is disabled — llm will just burn all
+    text. Reasoning is disabled since llm will just burn all
     tokens over-thinking.
 
     Returns None on any failure — caller decides how to
@@ -139,8 +167,8 @@ def _call_openrouter(diff: str) -> str | None:
                 headers={
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json",
-                    "HTTP-Referer": "pnp-tool",
-                    "X-Title": "pnp-commit-generator",
+                    "HTTP-Referer": "git-pnp-tool",
+                    "X-Title": "git-pnp-commit-generator",
                 },
                 data=json.dumps({
                     "model": model,
@@ -182,7 +210,7 @@ def _call_openrouter(diff: str) -> str | None:
             logger.warning("Unexpected OpenRouter response shape: %s", e)
 
         finally:
-            if content: return content
+            if content: return content.strip()
             print(f"Model ({midx}/{len(MODELS)}): {model}\n")
             if status == 429: continue
     

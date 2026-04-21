@@ -10,13 +10,12 @@
 [![Stars](https://img.shields.io/github/stars/2kDarki/pnp.svg?style=social)](https://github.com/2kDarki/pnp/stargazers)
 [![Issues](https://img.shields.io/github/issues/2kDarki/pnp.svg)](https://github.com/2kDarki/pnp/issues)
 
-**pnp** is a lightweight CLI tool to automate common Git
-workflow steps for any project type:
+**pnp** is a lightweight CLI tool to automate common Git workflow steps for any project type:
 
 1. Staging and committing changes  
 2. Pushing to Git remotes  
 3. Automatically bumping semantic version tags  
-4. Publishing releases (including GitHub releases)  
+4. Publishing releases (including GitHub releases)
 
 It's designed for fast iteration, CI integration, and monorepo-aware projects.
 
@@ -35,14 +34,13 @@ It's designed for fast iteration, CI integration, and monorepo-aware projects.
 - Monorepo support: operate on sub-packages  
 - GitHub releases: create releases from tags with optional asset uploads  
 - Dry-run mode for safe testing  
-- Optional git-machete checks/sync before push/publish  
+- Optional git-machete checks/sync before push/publish
 
 ---
 
 ## Project Detection
 
-`pnp` treats a directory as a project root when one or more
-common manifest markers are present:
+`pnp` treats a directory as a project root when one or more common manifest markers are present:
 
 - `pyproject.toml`
 - `package.json`
@@ -55,8 +53,7 @@ common manifest markers are present:
 - `mix.exs`
 - `Project.toml`
 
-These markers are used for monorepo subproject detection and
-doctor metadata checks.
+These markers are used for monorepo subproject detection and doctor metadata checks.
 
 ---
 
@@ -145,19 +142,19 @@ git pnp . --push --publish --sync
 ### Environment doctor
 
 ```bash
-pnp --doctor
+git pnp --doctor
 ```
 
 Machine-readable doctor output:
 ```bash
-pnp --doctor --doctor-json
-pnp --doctor --doctor-report pnplog/doctor.json
+git pnp --doctor --doctor-json
+git pnp --doctor --doctor-report pnplog/doctor.json
 ```
 
 ### Show effective config
 
 ```bash
-pnp --show-config
+git pnp --show-config
 ```
 
 ---
@@ -220,8 +217,7 @@ JSON schema contracts:
 
 - `--tag-message`, `-m`: Tag message
 
-- `--edit-message`, `-e`: Open editor to compose commit message via temp file
-  (temp file is auto-deleted after workflow completion)
+- `--edit-message`, `-e`: Open editor to compose commit message via temp file (temp file is auto-deleted after workflow completion)
 
 - `--editor`: Editor command override for `--edit-message` (otherwise inherits Git/editor env)
 
@@ -317,9 +313,6 @@ Release process references:
 - Runtime support targets Python `3.10+`.
 - CI validates Python `3.10`, `3.11`, `3.12` on Linux/macOS/Windows.
 - Git `2.30+` is required for expected workflow behavior.
-- `git pnp` extension shims target:
-  - POSIX shells via `git-pnp`
-  - Windows shells via `git-pnp.cmd` (and POSIX shim for Git Bash)
 - Interactive TUI output assumes a TTY; CI/non-interactive paths remain plain and deterministic.
 
 ---
